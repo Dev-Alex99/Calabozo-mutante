@@ -96,6 +96,18 @@ export class GameRenderer {
       );
     }
 
+    // 5.5. Draw Heart Pickups (Healing drops)
+    if (world.room.hearts) {
+      for (const heart of world.room.hearts) {
+        SpriteModels.drawHeartPickup(ctx, heart, this.totalTime);
+      }
+    }
+
+    // 5.6. Draw Enemy Aim Telegraph Warning Lines (Floor laser)
+    for (const enemy of world.enemies) {
+      SpriteModels.drawEnemyTelegraph(ctx, enemy);
+    }
+
     // 6. Draw Enemies (Original Art Models)
     for (const enemy of world.enemies) {
       SpriteModels.drawEnemy(ctx, enemy, this.totalTime);

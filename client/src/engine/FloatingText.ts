@@ -44,7 +44,7 @@ export class FloatingTextManager {
 
   public render(ctx: CanvasRenderingContext2D) {
     ctx.save();
-    ctx.font = 'bold 16px "Rajdhani", sans-serif';
+    ctx.font = 'bold 15px "Cinzel", "MedievalSharp", serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 

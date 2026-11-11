@@ -50,6 +50,7 @@ export interface PlayerEntity {
   dashCooldownEndsAt: number;
   dashEndsAt: number;
   lastAttackAt: number;
+  invulnerableUntil: number; // Mercy i-frames after taking damage
   relics: Relic[];
   kills: number;
   damageDealt: number;
@@ -73,8 +74,12 @@ export interface EnemyEntity {
   color: string;
   lastAttackAt: number;
   attackCooldownMs: number;
+  stateTimer: number; // For hop/telegraph state machines
+  aiState?: 'IDLE' | 'CHARGING' | 'ATTACKING' | 'COOLDOWN';
+  aimAngle?: number; // Telegraphed aim angle for ranged enemies
   isBoss?: boolean;
   bossPhase?: number;
+  flashUntil?: number; // White damage flash
 }
 
 export interface ProjectileEntity {
@@ -95,11 +100,19 @@ export interface ProjectileEntity {
   explosionRadius?: number;
 }
 
+export interface HeartPickup {
+  id: string;
+  x: number;
+  y: number;
+  healAmount: number;
+  createdAt: number;
+}
+
 export interface RoomMutation {
   title: string;
   description: string;
   directorRoast: string;
-  frictionMultiplier: number; // 0.15 = hielo, 1.0 = normal, 0.5 = barro
+  frictionMultiplier: number;
   bulletBouncesBonus: number;
   enemySpeedMultiplier: number;
   playerDamageMultiplier: number;
@@ -142,6 +155,7 @@ export interface RoomState {
   isCleared: boolean;
   doors: Record<DoorDirection, DoorState>;
   chest: ChestEntity | null;
+  hearts: HeartPickup[];
   width: number;
   height: number;
 }
@@ -164,47 +178,53 @@ export interface GameWorldState {
   };
 }
 
+/**
+ * REBALANCED CLASS CONFIGS:
+ * Significantly faster player base speeds (310-375 px/s) so the player easily outpaces
+ * standard monsters and can kite effectively.
+ * Shorter, punchier dash cooldowns (600-750ms) for high-octane fluid action.
+ */
 export const CLASS_CONFIGS: Record<PlayerClass, PlayerStats> = {
   GUERRERO: {
-    maxHp: 160,
-    moveSpeed: 210,
-    dashSpeed: 520,
-    dashDurationMs: 250,
-    dashCooldownMs: 1100,
-    attackDamage: 45,
-    attackCooldownMs: 380,
-    bulletSpeed: 0, // Melee swing arc
+    maxHp: 180,
+    moveSpeed: 310,            // Fast, sturdy frontliner
+    dashSpeed: 820,            // Powerful lunging dash
+    dashDurationMs: 220,
+    dashCooldownMs: 700,       // Fast responsive dash
+    attackDamage: 55,          // Heavy cleaving blow
+    attackCooldownMs: 320,
+    bulletSpeed: 0,
     bulletLifetimeMs: 140,
     bulletBounces: 0,
     bulletCount: 1,
-    bulletSpreadRad: 0.8,
+    bulletSpreadRad: 1.1,      // Wide 180° swing arc
   },
   CAZADOR: {
-    maxHp: 100,
-    moveSpeed: 250,
-    dashSpeed: 600,
-    dashDurationMs: 260,
-    dashCooldownMs: 900,
-    attackDamage: 24,
-    attackCooldownMs: 280,
-    bulletSpeed: 580,
-    bulletLifetimeMs: 1100,
+    maxHp: 110,
+    moveSpeed: 370,            // Highly agile kiting specialist
+    dashSpeed: 950,            // Lightning swift tumble
+    dashDurationMs: 230,
+    dashCooldownMs: 580,       // Ultra short dodge cooldown
+    attackDamage: 28,
+    attackCooldownMs: 220,     // High cadence rapid fire
+    bulletSpeed: 740,          // High velocity bolts
+    bulletLifetimeMs: 1200,
     bulletBounces: 1,
     bulletCount: 1,
-    bulletSpreadRad: 0.1,
+    bulletSpreadRad: 0.08,
   },
   MAGO: {
-    maxHp: 80,
-    moveSpeed: 220,
-    dashSpeed: 650,
-    dashDurationMs: 220,
-    dashCooldownMs: 1200,
-    attackDamage: 55,
-    attackCooldownMs: 500,
-    bulletSpeed: 420,
+    maxHp: 90,
+    moveSpeed: 335,            // Spacing & positioning caster
+    dashSpeed: 890,            // Arcane blink dash
+    dashDurationMs: 200,
+    dashCooldownMs: 650,
+    attackDamage: 65,          // Devastating explosive fire orb
+    attackCooldownMs: 440,
+    bulletSpeed: 520,
     bulletLifetimeMs: 1400,
     bulletBounces: 0,
     bulletCount: 1,
-    bulletSpreadRad: 0.2,
+    bulletSpreadRad: 0.15,
   },
 };

@@ -1,4 +1,4 @@
-import { PlayerEntity, EnemyEntity } from '../types';
+import { PlayerEntity, EnemyEntity, HeartPickup } from '../types';
 
 /**
  * Handcrafted, artistic 2D procedural sprite rendering engine.
@@ -17,6 +17,14 @@ export class SpriteModels {
   ) {
     ctx.save();
     ctx.translate(player.x, player.y);
+
+    // Mercy invulnerability i-frames flicker
+    const isInvulnerable = player.invulnerableUntil && Date.now() < player.invulnerableUntil;
+    if (isInvulnerable) {
+      if (Math.floor(Date.now() / 65) % 2 === 0) {
+        ctx.globalAlpha = 0.35;
+      }
+    }
 
     if (!player.isAlive) {
       // Fallen Hero: Skeletal tombstone & pool of blood
@@ -385,9 +393,45 @@ export class SpriteModels {
   /*                             ENEMIES & MONSTERS                            */
   /* ========================================================================= */
 
+  /**
+   * Draws telegraphed attack trajectory lines on the floor (e.g. Skeletons aiming bow).
+   */
+  public static drawEnemyTelegraph(ctx: CanvasRenderingContext2D, enemy: EnemyEntity) {
+    if (enemy.aiState !== 'CHARGING' || typeof enemy.aimAngle !== 'number') return;
+
+    ctx.save();
+    ctx.translate(enemy.x, enemy.y);
+    ctx.rotate(enemy.aimAngle);
+
+    // Warning trajectory line (crimson laser)
+    ctx.strokeStyle = 'rgba(239, 68, 68, 0.75)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 6]);
+    ctx.beginPath();
+    ctx.moveTo(enemy.radius, 0);
+    ctx.lineTo(enemy.radius + 380, 0);
+    ctx.stroke();
+
+    // Aim target reticle at end
+    ctx.strokeStyle = 'rgba(220, 38, 38, 0.9)';
+    ctx.setLineDash([]);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(enemy.radius + 380, 0, 6, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
   public static drawEnemy(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
     ctx.save();
     ctx.translate(enemy.x, enemy.y);
+
+    // White flash on damage hit
+    const isFlashing = enemy.flashUntil && Date.now() < enemy.flashUntil;
+    if (isFlashing) {
+      ctx.filter = 'brightness(2.5)';
+    }
 
     if (enemy.isBoss) {
       this.drawBossDirector(ctx, enemy, time);
@@ -398,6 +442,57 @@ export class SpriteModels {
     } else {
       this.drawMurcielago(ctx, enemy, time);
     }
+
+    ctx.restore();
+  }
+
+  /**
+   * Floating ruby heart pickup with glowing aura and floating animation.
+   */
+  public static drawHeartPickup(ctx: CanvasRenderingContext2D, heart: HeartPickup, time: number) {
+    const floatY = Math.sin(time * 4 + heart.x) * 3;
+
+    ctx.save();
+    ctx.translate(heart.x, heart.y + floatY);
+
+    // Floor shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+    ctx.beginPath();
+    ctx.ellipse(0, 12 - floatY * 0.5, 9, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Red aura glow
+    const pulse = Math.sin(time * 6 + heart.y) * 2;
+    ctx.fillStyle = 'rgba(239, 68, 68, 0.25)';
+    ctx.beginPath();
+    ctx.arc(0, -2, 12 + pulse, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Ruby Heart Shape
+    ctx.fillStyle = '#dc2626';
+    ctx.strokeStyle = '#7f1d1d';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, 5);
+    ctx.bezierCurveTo(-7, -1, -9, -8, -4, -10);
+    ctx.bezierCurveTo(0, -10, 0, -5, 0, -5);
+    ctx.bezierCurveTo(0, -5, 0, -10, 4, -10);
+    ctx.bezierCurveTo(9, -8, 7, -1, 0, 5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Specular shine
+    ctx.fillStyle = '#fecaca';
+    ctx.beginPath();
+    ctx.arc(-2.5, -7.5, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // +20 HP label
+    ctx.fillStyle = '#fca5a5';
+    ctx.font = 'bold 9px "Cinzel", serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('+20 HP', 0, -15);
 
     ctx.restore();
   }

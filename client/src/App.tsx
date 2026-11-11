@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { socket } from './socket';
-import { GameWorldState, PlayerClass } from './types';
+import { GameWorldState, PlayerClass, CLASS_CONFIGS } from './types';
 import { GameRenderer } from './engine/Renderer';
 import { LobbyView } from './components/LobbyView';
 import { DirectorBanner } from './components/DirectorBanner';
@@ -19,6 +19,9 @@ export const App: React.FC = () => {
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rendererRef = useRef<GameRenderer>(new GameRenderer());
+  const prevHpRef = useRef<number | null>(null);
+  const prevClearedRef = useRef<boolean>(false);
+  const prevPhaseRef = useRef<string>('');
 
   // Input states
   const keysDown = useRef<Record<string, boolean>>({});
@@ -46,6 +49,38 @@ export const App: React.FC = () => {
   useEffect(() => {
     socket.on('world:state', (updated: GameWorldState) => {
       setWorld(updated);
+
+      // Sound & tactile feedback on health changes
+      const player = updated.players[localPlayerId];
+      if (player) {
+        if (prevHpRef.current !== null) {
+          if (player.currentHp < prevHpRef.current) {
+            const diff = prevHpRef.current - player.currentHp;
+            sfx.playHit();
+            rendererRef.current.addScreenShake(7, 0.25);
+            rendererRef.current.textManager.spawn(`-${diff}`, player.x, player.y - 20, '#ef4444');
+            rendererRef.current.particleSystem.emitBlood(player.x, player.y, '#dc2626', 10);
+          } else if (player.currentHp > prevHpRef.current) {
+            const diff = player.currentHp - prevHpRef.current;
+            sfx.playHeal();
+            rendererRef.current.textManager.spawn(`+${diff} HP`, player.x, player.y - 25, '#22c55e');
+            rendererRef.current.particleSystem.emitSparks(player.x, player.y, '#4ade80', 8);
+          }
+        }
+        prevHpRef.current = player.currentHp;
+      }
+
+      // Room clear sound
+      if (updated.room.isCleared && !prevClearedRef.current) {
+        sfx.playRoomClear();
+      }
+      prevClearedRef.current = updated.room.isCleared;
+
+      // Victory fanfare
+      if (updated.phase === 'VICTORY' && prevPhaseRef.current !== 'VICTORY') {
+        sfx.playVictory();
+      }
+      prevPhaseRef.current = updated.phase;
 
       // Trigger relic choice modal if chest is openable
       if (updated.room.isCleared && updated.room.chest && !updated.room.chest.isOpen) {
@@ -167,7 +202,8 @@ export const App: React.FC = () => {
     }
 
     const isAttacking = isMouseDown.current || touchAttack.current;
-    if (isAttacking && Date.now() - player.lastAttackAt > 280) {
+    const attackCd = CLASS_CONFIGS[player.classType]?.attackCooldownMs || 250;
+    if (isAttacking && Date.now() - player.lastAttackAt >= attackCd) {
       if (player.classType === 'GUERRERO') {
         sfx.playSlash();
       } else {
