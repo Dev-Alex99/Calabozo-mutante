@@ -150,13 +150,13 @@ export class SpriteModels {
 
     // Overhead HUD: Name, Weapon Level, Combo & Health Bar
     const comboBadge = player.combo >= 3 ? ` 🔥x${player.combo}` : '';
-    ctx.fillStyle = isLocal ? '#f59e0b' : '#d6d3d1';
+    const labelText = `${player.name}${player.isHost ? ' 👑' : ''}${comboBadge}`;
     ctx.font = 'bold 11px "Cinzel", serif';
     ctx.textAlign = 'center';
-    ctx.shadowColor = '#000000';
-    ctx.shadowBlur = 4;
-    ctx.fillText(`${player.name}${player.isHost ? ' 👑' : ''}${comboBadge}`, 0, -29);
-    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#090807';
+    ctx.fillText(labelText, 1, -28);
+    ctx.fillStyle = isLocal ? '#f59e0b' : '#d6d3d1';
+    ctx.fillText(labelText, 0, -29);
 
     this.drawGothicHealthBar(ctx, 0, -20, 38, 5, player.currentHp, player.maxHp);
     if (player.shieldHp > 0) {
@@ -508,15 +508,16 @@ export class SpriteModels {
     ctx.arc(18, 2, 5, -Math.PI / 2, Math.PI / 2);
     ctx.stroke();
 
-    // Pulsing Fiery Crystal Core
+    // Pulsing Fiery Crystal Core (zero-blur layered glow)
     const pulse = isCasting ? 3.5 : Math.sin(time * 6) * 1.5;
+    ctx.fillStyle = 'rgba(234, 88, 12, 0.35)';
+    ctx.beginPath();
+    ctx.arc(19, 2, 7.5 + pulse, 0, Math.PI * 2);
+    ctx.fill();
     ctx.fillStyle = '#ea580c';
-    ctx.shadowColor = '#ea580c';
-    ctx.shadowBlur = 12;
     ctx.beginPath();
     ctx.arc(19, 2, 4 + pulse, 0, Math.PI * 2);
     ctx.fill();
-    ctx.shadowBlur = 0;
 
     // 3 Orbiting Arcane Rune Orbs
     for (let i = 0; i < 3; i++) {
@@ -685,11 +686,8 @@ export class SpriteModels {
       ctx.restore();
     }
 
-    // White flash on damage hit
+    // White flash on damage hit (fast alpha overlay without GPU-stalling ctx.filter)
     const isFlashing = enemy.flashUntil && now < enemy.flashUntil;
-    if (isFlashing) {
-      ctx.filter = 'brightness(2.5)';
-    }
 
     if (enemy.isBoss) {
       this.drawBossDirector(ctx, enemy, time);
@@ -703,6 +701,13 @@ export class SpriteModels {
       this.drawNigromante(ctx, enemy, time);
     } else {
       this.drawMurcielago(ctx, enemy, time);
+    }
+
+    if (isFlashing) {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
+      ctx.beginPath();
+      ctx.arc(0, 0, enemy.radius, 0, Math.PI * 2);
+      ctx.fill();
     }
 
     // Elemental Status Overlays (Burn, Poison, Chill, Stun)
@@ -1210,13 +1215,14 @@ export class SpriteModels {
     ctx.stroke();
 
     // Molten Iron Furnace Heart (Center)
+    ctx.fillStyle = isEnraged ? 'rgba(239, 68, 68, 0.35)' : 'rgba(245, 158, 11, 0.3)';
+    ctx.beginPath();
+    ctx.arc(0, 8, 25, 0, Math.PI * 2);
+    ctx.fill();
     ctx.fillStyle = isEnraged ? '#dc2626' : '#d97706';
-    ctx.shadowColor = isEnraged ? '#ef4444' : '#f59e0b';
-    ctx.shadowBlur = 20;
     ctx.beginPath();
     ctx.arc(0, 8, 18, 0, Math.PI * 2);
     ctx.fill();
-    ctx.shadowBlur = 0;
 
     // Heavy Iron Furnace Grille Bars
     ctx.strokeStyle = '#1c1917';
@@ -1275,13 +1281,12 @@ export class SpriteModels {
 
     // Huge Boss Health Bar
     this.drawGothicHealthBar(ctx, 0, -enemy.radius - 38, 120, 9, enemy.currentHp, enemy.maxHp);
-    ctx.fillStyle = '#f59e0b';
     ctx.font = 'bold 13px "Cinzel", serif';
     ctx.textAlign = 'center';
-    ctx.shadowColor = '#000000';
-    ctx.shadowBlur = 4;
+    ctx.fillStyle = '#090807';
+    ctx.fillText(enemy.name.toUpperCase(), 1, -enemy.radius - 49);
+    ctx.fillStyle = '#f59e0b';
     ctx.fillText(enemy.name.toUpperCase(), 0, -enemy.radius - 50);
-    ctx.shadowBlur = 0;
   }
 
   /* ========================================================================= */
@@ -1367,10 +1372,7 @@ export class SpriteModels {
       ctx.fillStyle = '#f59e0b';
       ctx.font = 'bold 11px "Cinzel", serif';
       ctx.textAlign = 'center';
-      ctx.shadowColor = '#000000';
-      ctx.shadowBlur = 4;
       ctx.fillText('ABRIR COFRE', 0, -32 + pulse);
-      ctx.shadowBlur = 0;
     }
 
     ctx.restore();
@@ -1406,10 +1408,7 @@ export class SpriteModels {
       ctx.fillRect(x, y, w, h);
 
       ctx.fillStyle = portalColor;
-      ctx.shadowColor = portalColor;
-      ctx.shadowBlur = 18;
       ctx.fillRect(x + 6, y + 4, w - 12, h - 8);
-      ctx.shadowBlur = 0;
 
       ctx.fillStyle = '#fef3c7';
       ctx.font = 'bold 10px "Cinzel", serif';
@@ -1485,10 +1484,7 @@ export class SpriteModels {
 
     ctx.fillStyle = '#e9d5ff';
     ctx.font = 'bold 10px "Cinzel", serif';
-    ctx.shadowColor = '#000000';
-    ctx.shadowBlur = 4;
     ctx.fillText('ALTAR & ARMERÍA [F]', 0, -24 + pulse * 0.4);
-    ctx.shadowBlur = 0;
 
     ctx.restore();
   }

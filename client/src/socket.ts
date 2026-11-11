@@ -6,8 +6,10 @@ export const socket: Socket = io(SOCKET_URL, {
   autoConnect: true,
   reconnection: true,
   reconnectionAttempts: Infinity,
-  reconnectionDelay: 1000,
-  reconnectionDelayMax: 5000,
+  reconnectionDelay: 800,
+  reconnectionDelayMax: 4000,
   timeout: 10000,
+  upgrade: true,
+  rememberUpgrade: true,
   transports: ['websocket', 'polling'],
 });

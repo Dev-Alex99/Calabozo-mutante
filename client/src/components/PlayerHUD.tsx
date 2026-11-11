@@ -12,7 +12,7 @@ interface Props {
   onAltarInteract: (action: 'UPGRADE_WEAPON' | 'BUY_HEAL' | 'BUY_SHIELD' | 'ACCEPT_PACT') => void;
 }
 
-export const PlayerHUD: React.FC<Props> = ({
+export const PlayerHUD: React.FC<Props> = React.memo(({
   player,
   enemiesRemaining,
   altar,
@@ -260,4 +260,4 @@ export const PlayerHUD: React.FC<Props> = ({
       )}
     </>
   );
-};
+});

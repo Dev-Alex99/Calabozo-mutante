@@ -179,6 +179,13 @@ export class ParticleSystem {
   }
 
   public update(dt: number) {
+    if (this.particles.length > 110) {
+      this.particles.splice(0, this.particles.length - 110);
+    }
+    if (this.ghostTrails.length > 24) {
+      this.ghostTrails.splice(0, this.ghostTrails.length - 24);
+    }
+
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];
       p.life += dt;
@@ -228,8 +235,6 @@ export class ParticleSystem {
       ctx.globalAlpha = Math.max(0, sw.alpha);
       ctx.strokeStyle = sw.color;
       ctx.lineWidth = sw.lineWidth;
-      ctx.shadowColor = sw.color;
-      ctx.shadowBlur = 10;
       ctx.beginPath();
       ctx.arc(sw.x, sw.y, sw.currentRadius, 0, Math.PI * 2);
       ctx.stroke();
@@ -242,8 +247,6 @@ export class ParticleSystem {
       ctx.globalAlpha = Math.max(0, arc.alpha);
       ctx.strokeStyle = arc.color;
       ctx.lineWidth = 2.5;
-      ctx.shadowColor = '#ffffff';
-      ctx.shadowBlur = 8;
       ctx.beginPath();
       ctx.moveTo(arc.x1, arc.y1);
       const segments = 5;

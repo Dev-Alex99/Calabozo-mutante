@@ -8,7 +8,7 @@ interface Props {
   onSkill: () => void;
 }
 
-export const TouchControls: React.FC<Props> = ({ onMoveChange, onAttackChange, onDash, onSkill }) => {
+export const TouchControls: React.FC<Props> = React.memo(({ onMoveChange, onAttackChange, onDash, onSkill }) => {
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const leftStickRef = useRef<HTMLDivElement>(null);
   const [leftThumb, setLeftThumb] = useState({ x: 0, y: 0, active: false });
@@ -112,4 +112,4 @@ export const TouchControls: React.FC<Props> = ({ onMoveChange, onAttackChange, o
       </div>
     </div>
   );
-};
+});

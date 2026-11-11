@@ -23,6 +23,8 @@ const io = new Server(httpServer, {
   },
   pingInterval: 10000,
   pingTimeout: 5000,
+  perMessageDeflate: false,
+  httpCompression: false,
 });
 
 const roomManager = new RoomManager(io);
@@ -163,8 +165,8 @@ io.on('connection', (socket: Socket) => {
     room.continueEndlessMode();
   });
 
-  // Player Input (30 Hz)
-  socket.on('player:input', ({ code, moveX, moveY, angle, isAttacking, isDashing, isUsingSkill }) => {
+  // Player Input (20-30 Hz)
+  socket.on('player:input', ({ code, moveX, moveY, angle, isAttacking, isDashing, isUsingSkill, x, y, vx, vy, roomIndex }) => {
     const room = roomManager.getRoom(code);
     if (!room) return;
 
@@ -175,6 +177,11 @@ io.on('connection', (socket: Socket) => {
       isAttacking: !!isAttacking,
       isDashing: !!isDashing,
       isUsingSkill: !!isUsingSkill,
+      x: typeof x === 'number' && Number.isFinite(x) ? x : undefined,
+      y: typeof y === 'number' && Number.isFinite(y) ? y : undefined,
+      vx: typeof vx === 'number' && Number.isFinite(vx) ? vx : undefined,
+      vy: typeof vy === 'number' && Number.isFinite(vy) ? vy : undefined,
+      roomIndex: typeof roomIndex === 'number' ? roomIndex : undefined,
     });
   });
 

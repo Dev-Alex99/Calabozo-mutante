@@ -11,24 +11,51 @@ interface PrefetchedRoomData {
 
 export class DungeonDirector {
   private prefetchCache = new Map<number, Promise<PrefetchedRoomData>>();
+  private resolvedCache = new Map<number, PrefetchedRoomData>();
+
+  private getInstantFallback(roomIndex: number): PrefetchedRoomData {
+    const fallbackPact = {
+      ...MOCK_PACTS[(roomIndex - 1) % MOCK_PACTS.length],
+      id: `pact_${roomIndex}_${Date.now()}`,
+      used: false,
+    };
+    const mockMutation = MOCK_MUTATIONS[(roomIndex - 1) % MOCK_MUTATIONS.length];
+    const mockRelics = this.pickRandomRelics(3);
+    return { mutation: mockMutation, relics: mockRelics, pact: fallbackPact };
+  }
 
   /**
    * Generates or retrieves from background cache the room mutation, chest relics, and AI pact.
+   * Never blocks gameplay for more than 180ms if MiniMax is still generating in the background.
    */
   public async getRoomData(roomIndex: number, totalRooms: number): Promise<PrefetchedRoomData> {
-    const isBoss = roomIndex >= totalRooms;
-
-    if (this.prefetchCache.has(roomIndex)) {
-      try {
-        const cached = await this.prefetchCache.get(roomIndex)!;
-        this.prefetchCache.delete(roomIndex);
-        return cached;
-      } catch (err) {
-        console.warn(`[Director] Cache failed for room ${roomIndex}, generating fresh fallback:`, err);
-      }
+    if (this.resolvedCache.has(roomIndex)) {
+      const ready = this.resolvedCache.get(roomIndex)!;
+      this.resolvedCache.delete(roomIndex);
+      this.prefetchCache.delete(roomIndex);
+      return ready;
     }
 
-    return this.generateFreshRoomData(roomIndex, isBoss);
+    const isBoss = roomIndex >= totalRooms;
+    let pending = this.prefetchCache.get(roomIndex);
+    if (!pending) {
+      pending = this.generateFreshRoomData(roomIndex, isBoss);
+      this.prefetchCache.set(roomIndex, pending);
+    }
+
+    const timeoutPromise = new Promise<null>(resolve => setTimeout(() => resolve(null), 180));
+    try {
+      const result = await Promise.race([pending, timeoutPromise]);
+      if (result) {
+        this.prefetchCache.delete(roomIndex);
+        this.resolvedCache.delete(roomIndex);
+        return result;
+      }
+    } catch (err) {
+      console.warn(`[Director] Cache failed for room ${roomIndex}, using instant fallback:`, err);
+    }
+
+    return this.getInstantFallback(roomIndex);
   }
 
   /**
@@ -36,10 +63,13 @@ export class DungeonDirector {
    */
   public prefetchNextRoom(roomIndex: number, totalRooms: number): void {
     if (roomIndex > totalRooms + 10) return;
-    if (this.prefetchCache.has(roomIndex)) return;
+    if (this.prefetchCache.has(roomIndex) || this.resolvedCache.has(roomIndex)) return;
 
     const isBoss = roomIndex === totalRooms || (roomIndex > totalRooms && roomIndex % 3 === 0);
-    const promise = this.generateFreshRoomData(roomIndex, isBoss);
+    const promise = this.generateFreshRoomData(roomIndex, isBoss).then(data => {
+      this.resolvedCache.set(roomIndex, data);
+      return data;
+    });
     this.prefetchCache.set(roomIndex, promise);
   }
 
@@ -190,14 +220,16 @@ Formato JSON obligatorio:
   }): Promise<{ bossName: string; introQuote: string; phase2Roast: string }> {
     const isMeleeHeavy = telemetry.meleeAttacksCount > telemetry.rangedAttacksCount;
 
+    const fallbackBoss = {
+      bossName: isMeleeHeavy ? 'El Juez Acorazado de Cuchillas' : 'El Gran Arquitecto del Abismo',
+      introQuote: isMeleeHeavy
+        ? '¿Les gusta golpear de cerca? He calibrado mis ondas de choque y meteoros para triturar huesos.'
+        : `¿${telemetry.rangedAttacksCount} disparos a distancia y ${telemetry.synergiesCount} sinergias? Veamos cómo esquivan mi protocolo de aniquilación total.`,
+      phase2Roast: '¡FASE 2 ACTIVADA! ¡SE ACABÓ EL PERIODO DE PRUEBA GRATUITA!',
+    };
+
     if (!config.minimax.apiKey) {
-      return {
-        bossName: isMeleeHeavy ? 'El Juez Acorazado de Cuchillas' : 'El Gran Arquitecto del Abismo',
-        introQuote: isMeleeHeavy
-          ? '¿Les gusta golpear de cerca? He calibrado mis ondas de choque y meteoros para triturar huesos.'
-          : `¿${telemetry.rangedAttacksCount} disparos a distancia y ${telemetry.synergiesCount} sinergias? Veamos cómo esquivan mi protocolo de aniquilación total.`,
-        phase2Roast: '¡FASE 2 ACTIVADA! ¡SE ACABÓ EL PERIODO DE PRUEBA GRATUITA!',
-      };
+      return fallbackBoss;
     }
 
     try {
@@ -216,23 +248,24 @@ Devuelve un JSON con:
   "phase2Roast": "Grito de furia cuando el jefe llega al 50% de HP"
 }`;
 
-      const res = await callMiniMax([
-        { role: 'system', content: 'Eres el Director del Calabozo diseñando el jefe final. Responde solo con JSON.' },
-        { role: 'user', content: prompt },
-      ], 0.7, 400);
+      const timeoutPromise = new Promise<null>(resolve => setTimeout(() => resolve(null), 250));
+      const res = await Promise.race([
+        callMiniMax([
+          { role: 'system', content: 'Eres el Director del Calabozo diseñando el jefe final. Responde solo con JSON.' },
+          { role: 'user', content: prompt },
+        ], 0.7, 400),
+        timeoutPromise,
+      ]);
 
+      if (!res) return fallbackBoss;
       const data = JSON.parse(res);
       return {
-        bossName: data.bossName || 'El Algoritmo Supremo Castigador',
-        introQuote: data.introQuote || 'Es hora de auditar sus mediocres vidas.',
-        phase2Roast: data.phase2Roast || '¡Fase 2! ¡Aumentando el voltaje al 200%!',
+        bossName: data.bossName || fallbackBoss.bossName,
+        introQuote: data.introQuote || fallbackBoss.introQuote,
+        phase2Roast: data.phase2Roast || fallbackBoss.phase2Roast,
       };
     } catch {
-      return {
-        bossName: 'El Gran Auditor del Abismo',
-        introQuote: 'Sus contratos de vida están a punto de ser rescindidos sin indemnización.',
-        phase2Roast: '¡Sistemas al 100%! ¡Abran fuego en todos los sectores!',
-      };
+      return fallbackBoss;
     }
   }
 

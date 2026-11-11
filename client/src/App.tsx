@@ -28,6 +28,36 @@ export const App: React.FC = () => {
   const prevPhaseRef = useRef<string>('');
   const prevEnemiesRef = useRef<EnemyEntity[]>([]);
   const processedEventsRef = useRef<Set<string>>(new Set());
+  const lastHudRenderAtRef = useRef<number>(0);
+  const lastHudRoomRef = useRef<number>(-1);
+  const lastDialogueTsRef = useRef<number>(0);
+
+  // Client-side prediction state for 0ms local player latency
+  const localSimRef = useRef<{
+    roomIndex: number;
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    angle: number;
+    isDashing: boolean;
+    dashEndsAt: number;
+    dashCooldownEndsAt: number;
+    skillCooldownEndsAt: number;
+    lastAttackAt: number;
+  }>({
+    roomIndex: -1,
+    x: 600,
+    y: 670,
+    vx: 0,
+    vy: 0,
+    angle: -Math.PI / 2,
+    isDashing: false,
+    dashEndsAt: 0,
+    dashCooldownEndsAt: 0,
+    skillCooldownEndsAt: 0,
+    lastAttackAt: 0,
+  });
 
   // Input states
   const keysDown = useRef<Record<string, boolean>>({});
@@ -57,13 +87,46 @@ export const App: React.FC = () => {
 
   // Socket Listeners
   useEffect(() => {
-    socket.on('world:state', (updated: GameWorldState) => {
-      worldRef.current = updated;
-      setWorld(updated);
-
+    const processWorldUpdate = (updated: GameWorldState) => {
+      const now = Date.now();
       const currentPlayerId = localPlayerIdRef.current;
       const player = updated.players[currentPlayerId];
       const renderer = rendererRef.current;
+      const sim = localSimRef.current;
+
+      // Reconcile server snapshot with local 60-144 FPS client prediction
+      if (player && updated.phase === 'PLAYING') {
+        const roomChanged = updated.room.roomIndex !== sim.roomIndex;
+        const dist = Math.hypot(player.x - sim.x, player.y - sim.y);
+
+        if (roomChanged || !player.isAlive || dist > 180) {
+          // Hard snap on room transition, death/revive, or teleport skill
+          sim.roomIndex = updated.room.roomIndex;
+          sim.x = player.x;
+          sim.y = player.y;
+          sim.vx = player.vx;
+          sim.vy = player.vy;
+          sim.isDashing = player.isDashing;
+        } else {
+          // Keep client-predicted position & gently blend any server external forces (e.g. gravity well)
+          if (dist > 24) {
+            sim.x += (player.x - sim.x) * 0.25;
+            sim.y += (player.y - sim.y) * 0.25;
+          }
+          player.x = sim.x;
+          player.y = sim.y;
+          player.vx = sim.vx;
+          player.vy = sim.vy;
+          player.angle = sim.angle;
+          player.isDashing = sim.isDashing;
+          player.dashEndsAt = Math.max(player.dashEndsAt, sim.dashEndsAt);
+          player.dashCooldownEndsAt = Math.max(player.dashCooldownEndsAt, sim.dashCooldownEndsAt);
+          player.skillCooldownEndsAt = Math.max(player.skillCooldownEndsAt, sim.skillCooldownEndsAt);
+          player.lastAttackAt = Math.max(player.lastAttackAt, sim.lastAttackAt);
+        }
+      }
+
+      worldRef.current = updated;
 
       if (player) {
         if (prevHpRef.current !== null) {
@@ -96,6 +159,10 @@ export const App: React.FC = () => {
         for (const ev of updated.recentEvents) {
           if (processedEventsRef.current.has(ev.id)) continue;
           processedEventsRef.current.add(ev.id);
+          if (processedEventsRef.current.size > 200) {
+            const firstKey = processedEventsRef.current.values().next().value;
+            if (firstKey) processedEventsRef.current.delete(firstKey);
+          }
 
           if (ev.type === 'EXPLOSION') {
             sfx.playExplosion();
@@ -165,12 +232,14 @@ export const App: React.FC = () => {
       prevEnemiesRef.current = updated.enemies;
 
       // Room clear sound
+      const clearChanged = updated.room.isCleared !== prevClearedRef.current;
       if (updated.room.isCleared && !prevClearedRef.current) {
         sfx.playRoomClear();
       }
       prevClearedRef.current = updated.room.isCleared;
 
       // Victory fanfare
+      const phaseChanged = updated.phase !== prevPhaseRef.current;
       if (updated.phase === 'VICTORY' && prevPhaseRef.current !== 'VICTORY') {
         sfx.playVictory();
       }
@@ -178,11 +247,59 @@ export const App: React.FC = () => {
 
       // Trigger relic choice modal if chest is available and NOT yet claimed by this player!
       const alreadyClaimed = updated.room.chest?.claimedByPlayerIds?.includes(currentPlayerId);
-      if (updated.room.isCleared && updated.room.chest && !alreadyClaimed) {
-        setShowRelicModal(true);
-      } else {
-        setShowRelicModal(false);
+      const shouldShowRelic = !!(updated.room.isCleared && updated.room.chest && !alreadyClaimed);
+      setShowRelicModal(prev => (prev !== shouldShowRelic ? shouldShowRelic : prev));
+
+      // Throttle React HUD state updates during combat to ~5 Hz (every 180ms) unless an important event occurred!
+      const roomChanged = updated.room.roomIndex !== lastHudRoomRef.current;
+      const dialogueChanged = updated.directorDialogue.timestamp !== lastDialogueTsRef.current;
+      if (
+        updated.phase !== 'PLAYING' ||
+        phaseChanged ||
+        clearChanged ||
+        roomChanged ||
+        dialogueChanged ||
+        now - lastHudRenderAtRef.current >= 180
+      ) {
+        lastHudRenderAtRef.current = now;
+        lastHudRoomRef.current = updated.room.roomIndex;
+        lastDialogueTsRef.current = updated.directorDialogue.timestamp;
+        setWorld(updated);
       }
+    };
+
+    socket.on('world:state', processWorldUpdate);
+
+    socket.on('world:tick', (tick: any) => {
+      const base = worldRef.current;
+      if (!base || base.room.roomIndex !== tick.r) return;
+
+      const mergedPlayers: Record<string, any> = {};
+      for (const [id, pTick] of Object.entries(tick.p || {})) {
+        const existing = base.players[id];
+        if (existing) {
+          mergedPlayers[id] = { ...existing, ...(pTick as object) };
+        }
+      }
+
+      const merged: GameWorldState = {
+        ...base,
+        room: {
+          ...base.room,
+          isCleared: tick.c,
+          hearts: tick.h || base.room.hearts,
+          barrels: tick.b || base.room.barrels,
+          hazards: tick.hz || base.room.hazards,
+        },
+        players: mergedPlayers,
+        enemies: tick.e || [],
+        projectiles: tick.pr || [],
+        recentEvents: tick.ev || [],
+        directorAnger: tick.da ?? base.directorAnger,
+        directorDialogue: tick.dd || base.directorDialogue,
+      };
+
+      processWorldUpdate(merged);
     });
 
     socket.on('connect', () => {
@@ -195,19 +312,14 @@ export const App: React.FC = () => {
 
     return () => {
       socket.off('world:state');
+      socket.off('world:tick');
       socket.off('connect');
       socket.off('disconnect');
     };
   }, []);
 
-  // Input Sender to Server (30 Hz)
-  const sendPlayerInput = useCallback((overrideDash = false, overrideSkill = false) => {
-    const currentWorld = worldRef.current;
-    const currentPlayerId = localPlayerIdRef.current;
-    if (!currentWorld || currentWorld.phase !== 'PLAYING' || !currentWorld.code) return;
-    const player = currentWorld.players[currentPlayerId];
-    if (!player || !player.isAlive) return;
-
+  // Helper to read current movement vector
+  const getMoveVector = useCallback(() => {
     let moveX = 0;
     let moveY = 0;
 
@@ -226,54 +338,97 @@ export const App: React.FC = () => {
       moveX /= len;
       moveY /= len;
     }
+    return { moveX, moveY, len: Math.min(1, len) };
+  }, []);
 
-    const canvas = canvasRef.current;
-    let angle = player.angle;
-    if (canvas) {
-      const renderer = rendererRef.current;
-      const playerScreenX = player.x - renderer.cameraX;
-      const playerScreenY = player.y - renderer.cameraY;
-      angle = Math.atan2(mousePos.current.y - playerScreenY, mousePos.current.x - playerScreenX);
-    }
+  // Input Sender to Server (20 Hz + instant on action)
+  const sendPlayerInput = useCallback((overrideDash = false, overrideSkill = false) => {
+    const currentWorld = worldRef.current;
+    const currentPlayerId = localPlayerIdRef.current;
+    if (!currentWorld || currentWorld.phase !== 'PLAYING' || !currentWorld.code) return;
+    const player = currentWorld.players[currentPlayerId];
+    if (!player || !player.isAlive) return;
 
+    const { moveX, moveY } = getMoveVector();
+    const sim = localSimRef.current;
     const isAttacking = isMouseDown.current || touchAttack.current;
-    const attackCd = CLASS_CONFIGS[player.classType]?.attackCooldownMs || 250;
-    if (isAttacking && Date.now() - player.lastAttackAt >= attackCd) {
-      if (player.classType === 'GUERRERO' || player.classType === 'PICARO') {
-        sfx.playSlash();
-      } else {
-        sfx.playShoot();
-      }
-    }
 
     socket.emit('player:input', {
       code: currentWorld.code,
-      moveX,
-      moveY,
-      angle,
+      moveX: Number(moveX.toFixed(2)),
+      moveY: Number(moveY.toFixed(2)),
+      angle: Number(sim.angle.toFixed(2)),
       isAttacking,
       isDashing: overrideDash,
       isUsingSkill: overrideSkill,
+      x: Math.round(sim.x),
+      y: Math.round(sim.y),
+      vx: Math.round(sim.vx),
+      vy: Math.round(sim.vy),
+      roomIndex: currentWorld.room.roomIndex,
     });
-  }, []);
+  }, [getMoveVector]);
 
   const triggerDash = useCallback(() => {
     const currentWorld = worldRef.current;
     const currentPlayerId = localPlayerIdRef.current;
     if (!currentWorld || currentWorld.phase !== 'PLAYING') return;
     const player = currentWorld.players[currentPlayerId];
-    if (!player || !player.isAlive || player.isDashing || Date.now() < player.dashCooldownEndsAt) return;
+    const now = Date.now();
+    const sim = localSimRef.current;
+    if (!player || !player.isAlive || sim.isDashing || now < player.dashCooldownEndsAt) return;
+
+    const stats = CLASS_CONFIGS[player.classType] || CLASS_CONFIGS.CAZADOR;
+    const { moveX, moveY, len } = getMoveVector();
+    const dirX = len > 0.1 ? moveX / len : Math.cos(sim.angle);
+    const dirY = len > 0.1 ? moveY / len : Math.sin(sim.angle);
+
+    // Apply dash immediately on local client (0ms latency)
+    sim.isDashing = true;
+    sim.dashEndsAt = now + stats.dashDurationMs;
+    sim.dashCooldownEndsAt = now + stats.dashCooldownMs;
+    sim.vx = dirX * stats.dashSpeed;
+    sim.vy = dirY * stats.dashSpeed;
+    player.isDashing = true;
+    player.dashEndsAt = sim.dashEndsAt;
+    player.dashCooldownEndsAt = sim.dashCooldownEndsAt;
+    player.vx = sim.vx;
+    player.vy = sim.vy;
 
     sfx.playDash();
     sendPlayerInput(true, false);
-  }, [sendPlayerInput]);
+  }, [getMoveVector, sendPlayerInput]);
 
   const triggerSkill = useCallback(() => {
     const currentWorld = worldRef.current;
     const currentPlayerId = localPlayerIdRef.current;
     if (!currentWorld || currentWorld.phase !== 'PLAYING') return;
     const player = currentWorld.players[currentPlayerId];
-    if (!player || !player.isAlive || Date.now() < player.skillCooldownEndsAt) return;
+    const now = Date.now();
+    const sim = localSimRef.current;
+    if (!player || !player.isAlive || now < player.skillCooldownEndsAt) return;
+
+    const stats = CLASS_CONFIGS[player.classType] || CLASS_CONFIGS.CAZADOR;
+    let skillCdMult = 1;
+    for (const r of player.relics) {
+      if (r.modifiers.skillCooldownMultiplier) skillCdMult *= r.modifiers.skillCooldownMultiplier;
+    }
+    const effSkillCd = Math.max(1800, Math.round(stats.skillCooldownMs * skillCdMult));
+
+    sim.skillCooldownEndsAt = now + effSkillCd;
+    player.skillCooldownEndsAt = sim.skillCooldownEndsAt;
+
+    if (player.classType === 'PICARO') {
+      const W = currentWorld.room.width || 1200;
+      const H = currentWorld.room.height || 800;
+      sim.x = Math.max(60, Math.min(W - 60, sim.x + Math.cos(sim.angle) * 145));
+      sim.y = Math.max(60, Math.min(H - 60, sim.y + Math.sin(sim.angle) * 145));
+      player.x = sim.x;
+      player.y = sim.y;
+      player.stealthedUntil = now + 2600;
+    } else if (player.classType === 'GUERRERO') {
+      player.skillActiveUntil = now + 2200;
+    }
 
     sfx.playSkill();
     sendPlayerInput(false, true);
@@ -321,6 +476,7 @@ export const App: React.FC = () => {
     const handleMouseDown = (e: MouseEvent) => {
       if (e.button === 0) {
         isMouseDown.current = true;
+        sendPlayerInput(false, false);
       } else if (e.button === 2) {
         e.preventDefault();
         triggerSkill();
@@ -357,28 +513,138 @@ export const App: React.FC = () => {
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('contextmenu', handleContextMenu);
     };
-  }, [triggerDash, triggerSkill, triggerPing]);
+  }, [triggerDash, triggerSkill, triggerPing, sendPlayerInput]);
 
   useEffect(() => {
     const interval = setInterval(() => {
       sendPlayerInput(false, false);
-    }, 1000 / 30);
+    }, 1000 / 20);
 
     return () => clearInterval(interval);
   }, [sendPlayerInput]);
 
-  // Persistent 60-144 FPS Canvas Render Loop (reads from worldRef without restarting on React state updates!)
+  // Persistent 60-144 FPS Canvas Render & Client Prediction Loop
   useEffect(() => {
     let animId: number;
     let lastTime = performance.now();
 
     const loop = (time: number) => {
-      const dt = Math.min(0.06, (time - lastTime) / 1000);
+      const dt = Math.min(0.05, (time - lastTime) / 1000);
       lastTime = time;
 
       const canvas = canvasRef.current;
       const currentWorld = worldRef.current;
+      const currentPlayerId = localPlayerIdRef.current;
+
       if (canvas && currentWorld) {
+        // 1. Simulate local player physics & aim at full 60-144 FPS (0ms input lag!)
+        const player = currentWorld.players[currentPlayerId];
+        if (player && player.isAlive && currentWorld.phase === 'PLAYING') {
+          const now = Date.now();
+          const sim = localSimRef.current;
+          if (sim.roomIndex !== currentWorld.room.roomIndex) {
+            sim.roomIndex = currentWorld.room.roomIndex;
+            sim.x = player.x;
+            sim.y = player.y;
+            sim.vx = player.vx;
+            sim.vy = player.vy;
+          }
+
+          const renderer = rendererRef.current;
+          const playerScreenX = sim.x - renderer.cameraX;
+          const playerScreenY = sim.y - renderer.cameraY;
+          sim.angle = Math.atan2(mousePos.current.y - playerScreenY, mousePos.current.x - playerScreenX);
+
+          const base = CLASS_CONFIGS[player.classType] || CLASS_CONFIGS.CAZADOR;
+          let speedMult = 1;
+          let cdMult = Math.pow(0.94, (player.weaponLevel || 1) - 1);
+          for (const r of player.relics) {
+            if (r.modifiers.moveSpeedMultiplier) speedMult *= r.modifiers.moveSpeedMultiplier;
+            if (r.modifiers.attackCooldownMultiplier) cdMult *= r.modifiers.attackCooldownMultiplier;
+          }
+
+          if (sim.isDashing && now >= sim.dashEndsAt) {
+            sim.isDashing = false;
+            sim.vx *= 0.3;
+            sim.vy *= 0.3;
+          }
+
+          if (!sim.isDashing) {
+            const frenzyBonus = player.combo >= 15 ? 1.15 : player.combo >= 8 ? 1.08 : 1.0;
+            const stealthBonus = player.stealthedUntil && now < player.stealthedUntil ? 1.25 : 1.0;
+            const targetSpeed = Math.round(base.moveSpeed * speedMult) * frenzyBonus * stealthBonus;
+            const { moveX, moveY, len } = getMoveVector();
+            const normX = len > 0 ? (moveX / len) * targetSpeed : 0;
+            const normY = len > 0 ? (moveY / len) * targetSpeed : 0;
+
+            const isIce = currentWorld.room.mutation.frictionMultiplier < 0.3;
+            const rate = isIce ? (len > 0 ? 14 : 1.8) : 22;
+            const blend = Math.min(1, dt * rate);
+            sim.vx += (normX - sim.vx) * blend;
+            sim.vy += (normY - sim.vy) * blend;
+          }
+
+          sim.x += sim.vx * dt;
+          sim.y += sim.vy * dt;
+
+          // Resolve pillar collisions locally
+          const pillars = currentWorld.room.pillars || [];
+          for (const pil of pillars) {
+            const dx = sim.x - pil.x;
+            const dy = sim.y - pil.y;
+            const dist = Math.hypot(dx, dy);
+            const minDist = pil.radius + 18;
+            if (dist < minDist && dist > 0.001) {
+              sim.x = pil.x + (dx / dist) * minDist;
+              sim.y = pil.y + (dy / dist) * minDist;
+            }
+          }
+
+          // Clamp to room bounds (allowing door entry when cleared)
+          const W = currentWorld.room.width || 1200;
+          const H = currentWorld.room.height || 800;
+          const pad = 48;
+          const isCleared = currentWorld.room.isCleared;
+          const doors = currentWorld.room.doors;
+
+          if (sim.y < pad && !(isCleared && doors?.NORTH?.open && Math.abs(sim.x - W / 2) < 58)) {
+            sim.y = pad;
+            sim.vy = 0;
+          }
+          if (sim.y > H - pad) {
+            sim.y = H - pad;
+            sim.vy = 0;
+          }
+          if (sim.x < pad && !(isCleared && doors?.WEST?.open && Math.abs(sim.y - H / 2) < 58)) {
+            sim.x = pad;
+            sim.vx = 0;
+          }
+          if (sim.x > W - pad && !(isCleared && doors?.EAST?.open && Math.abs(sim.y - H / 2) < 58)) {
+            sim.x = W - pad;
+            sim.vx = 0;
+          }
+
+          // Instant local weapon swing / shoot animation & sound once per cooldown
+          const isAttacking = isMouseDown.current || touchAttack.current;
+          const effAttackCd = Math.max(95, Math.round(base.attackCooldownMs * cdMult));
+          if (isAttacking && now - sim.lastAttackAt >= effAttackCd) {
+            sim.lastAttackAt = now;
+            player.lastAttackAt = now;
+            if (player.classType === 'GUERRERO' || player.classType === 'PICARO') {
+              sfx.playSlash();
+            } else {
+              sfx.playShoot();
+            }
+          }
+
+          player.x = sim.x;
+          player.y = sim.y;
+          player.vx = sim.vx;
+          player.vy = sim.vy;
+          player.angle = sim.angle;
+          player.isDashing = sim.isDashing;
+        }
+
         const ctx = canvas.getContext('2d');
         if (ctx) {
           if (canvas.width !== window.innerWidth || canvas.height !== window.innerHeight) {
@@ -389,7 +655,7 @@ export const App: React.FC = () => {
           rendererRef.current.render(
             ctx,
             currentWorld,
-            localPlayerIdRef.current,
+            currentPlayerId,
             canvas.width,
             canvas.height,
             dt
@@ -402,7 +668,7 @@ export const App: React.FC = () => {
 
     animId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(animId);
-  }, []);
+  }, [getMoveVector]);
 
   // Handlers for Lobby & Actions
   const handleCreateRoom = (playerName: string, classType: PlayerClass) => {
@@ -477,10 +743,19 @@ export const App: React.FC = () => {
     socket.emit('relic:pick', { code: world.code, relicId });
   };
 
-  const handleAltarInteract = (action: 'UPGRADE_WEAPON' | 'BUY_HEAL' | 'BUY_SHIELD' | 'ACCEPT_PACT') => {
-    if (!world?.code) return;
-    socket.emit('altar:interact', { code: world.code, action });
-  };
+  const handleAltarInteract = useCallback((action: 'UPGRADE_WEAPON' | 'BUY_HEAL' | 'BUY_SHIELD' | 'ACCEPT_PACT') => {
+    const code = worldRef.current?.code;
+    if (!code) return;
+    socket.emit('altar:interact', { code, action });
+  }, []);
+
+  const handleTouchMove = useCallback((x: number, y: number) => {
+    touchMove.current = { x, y };
+  }, []);
+
+  const handleTouchAttack = useCallback((attacking: boolean) => {
+    touchAttack.current = attacking;
+  }, []);
 
   const localPlayer = world?.players[localPlayerId];
   const isPlaying = world && world.phase === 'PLAYING';
@@ -552,12 +827,8 @@ export const App: React.FC = () => {
       {/* Touch Controls (Mobile) */}
       {isPlaying && (
         <TouchControls
-          onMoveChange={(x, y) => {
-            touchMove.current = { x, y };
-          }}
-          onAttackChange={(attacking) => {
-            touchAttack.current = attacking;
-          }}
+          onMoveChange={handleTouchMove}
+          onAttackChange={handleTouchAttack}
           onDash={triggerDash}
           onSkill={triggerSkill}
         />

@@ -51,9 +51,9 @@ export class FloatingTextManager {
     for (const item of this.items) {
       ctx.save();
       ctx.globalAlpha = item.alpha;
+      ctx.fillStyle = '#090807';
+      ctx.fillText(item.text, item.x + 1, item.y + 1);
       ctx.fillStyle = item.color;
-      ctx.shadowColor = '#000000';
-      ctx.shadowBlur = 4;
       ctx.fillText(item.text, item.x, item.y);
       ctx.restore();
     }

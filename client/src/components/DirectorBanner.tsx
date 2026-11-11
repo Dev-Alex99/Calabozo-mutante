@@ -12,7 +12,7 @@ interface Props {
   directorAnger?: number;
 }
 
-export const DirectorBanner: React.FC<Props> = ({
+export const DirectorBanner: React.FC<Props> = React.memo(({
   dialogue,
   mutation,
   roomIndex,
@@ -20,27 +20,14 @@ export const DirectorBanner: React.FC<Props> = ({
   encounterType = 'STANDARD',
   directorAnger = 0,
 }) => {
-  const [displayedText, setDisplayedText] = useState('');
   const [voiceEnabled, setVoiceEnabled] = useState(true);
 
   useEffect(() => {
-    setDisplayedText('');
-    let idx = 0;
     const text = dialogue.text || '';
-
-    speechDirector.speak(text);
-
-    const interval = setInterval(() => {
-      if (idx < text.length) {
-        setDisplayedText(text.slice(0, idx + 1));
-        idx++;
-      } else {
-        clearInterval(interval);
-      }
-    }, 20);
-
-    return () => clearInterval(interval);
-  }, [dialogue.text]);
+    if (text) {
+      speechDirector.speak(text);
+    }
+  }, [dialogue.text, dialogue.timestamp]);
 
   const toggleVoice = () => {
     const state = speechDirector.toggle();
@@ -82,8 +69,7 @@ export const DirectorBanner: React.FC<Props> = ({
             </span>
           </div>
           <p className="text-xs md:text-sm text-[#f5f5f4] font-serif italic tracking-normal leading-tight mt-0.5 min-h-[1.3rem]">
-            "{displayedText}"
-            <span className="animate-pulse text-[#b45309]">|</span>
+            "{dialogue.text}"
           </p>
         </div>
 
@@ -137,4 +123,4 @@ export const DirectorBanner: React.FC<Props> = ({
       </div>
     </div>
   );
-};
+});

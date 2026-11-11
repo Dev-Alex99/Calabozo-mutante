@@ -17,7 +17,7 @@ export const config = {
   game: {
     maxPlayers: parseInt(process.env.MAX_PLAYERS_PER_ROOM || '4', 10),
     totalRoomsToBoss: parseInt(process.env.TOTAL_ROOMS_TO_BOSS || '6', 10),
-    tickRateHz: parseInt(process.env.SERVER_TICK_RATE_HZ || '30', 10),
+    tickRateHz: parseInt(process.env.SERVER_TICK_RATE_HZ || '20', 10),
     roomWidth: 1200,
     roomHeight: 800,
   },

@@ -65,6 +65,8 @@ export class DungeonRoom {
   private nextEventId = 1;
   private roomClearAnnounced = false;
   private interventionTriggeredInRoom = false;
+  private isTransitioningRoom = false;
+  private lastClientSyncAt: Record<string, number> = {};
 
   public telemetry = {
     totalDamageDealt: 0,
@@ -285,25 +287,38 @@ export class DungeonRoom {
   }
 
   private async setupRoom(index: number, encounterType: RoomEncounterType = 'STANDARD'): Promise<void> {
-    this.roomIndex = index;
-    const isBoss = index === this.totalRooms || (index > this.totalRooms && index % 3 === 0);
-    this.encounterType = isBoss ? 'BOSS' : encounterType;
-    this.projectiles = [];
-    this.hearts = [];
-    this.recentEvents = [];
-    this.chestClaimedBy = [];
-    this.roomClearAnnounced = false;
-    this.interventionTriggeredInRoom = false;
+    if (this.isTransitioningRoom) return;
+    this.isTransitioningRoom = true;
 
-    const roomData = await this.director.getRoomData(index, this.totalRooms);
-    this.currentMutation = {
-      ...roomData.mutation,
-      encounterType: this.encounterType,
-    };
-    this.chestRelics = roomData.relics;
+    try {
+      this.roomIndex = index;
+      const isBoss = index === this.totalRooms || (index > this.totalRooms && index % 3 === 0);
+      this.encounterType = isBoss ? 'BOSS' : encounterType;
+      this.projectiles = [];
+      this.hearts = [];
+      this.recentEvents = [];
+      this.chestClaimedBy = [];
+      this.roomClearAnnounced = false;
+      this.interventionTriggeredInRoom = false;
+      this.lastClientSyncAt = {};
 
-    const W = config.game.roomWidth;
-    const H = config.game.roomHeight;
+      const W = config.game.roomWidth;
+      const H = config.game.roomHeight;
+
+      // Immediately move players away from doors before any async work!
+      Object.values(this.players).forEach((p, idx) => {
+        p.x = W / 2 + (idx * 44 - 66);
+        p.y = H - 125;
+        p.vx = 0;
+        p.vy = 0;
+      });
+
+      const roomData = await this.director.getRoomData(index, this.totalRooms);
+      this.currentMutation = {
+        ...roomData.mutation,
+        encounterType: this.encounterType,
+      };
+      this.chestRelics = roomData.relics;
 
     // 1. Setup Physical Gothic Stone Pillars (match Renderer positions)
     this.pillars = isBoss
@@ -403,14 +418,17 @@ export class DungeonRoom {
       timestamp: Date.now(),
     };
 
-    if (isBoss) {
-      await this.spawnBoss();
-    } else {
-      this.spawnEnemiesForRoom(index, this.encounterType);
-    }
+      if (isBoss) {
+        await this.spawnBoss();
+      } else {
+        this.spawnEnemiesForRoom(index, this.encounterType);
+      }
 
-    this.director.prefetchNextRoom(index + 1, this.totalRooms);
-    this.broadcastState();
+      this.director.prefetchNextRoom(index + 1, this.totalRooms);
+      this.broadcastState(false);
+    } finally {
+      this.isTransitioningRoom = false;
+    }
   }
 
   private spawnEnemiesForRoom(index: number, encounterType: RoomEncounterType): void {
@@ -586,6 +604,11 @@ export class DungeonRoom {
       isAttacking?: boolean;
       isDashing?: boolean;
       isUsingSkill?: boolean;
+      x?: number;
+      y?: number;
+      vx?: number;
+      vy?: number;
+      roomIndex?: number;
     }
   ): void {
     const player = this.players[socketId];
@@ -594,6 +617,27 @@ export class DungeonRoom {
     player.angle = input.angle;
     const now = Date.now();
     const stats = this.getPlayerEffectiveStats(player);
+
+    // Accept client-predicted position when valid & in same room for zero-rubberband movement
+    if (
+      !player.isBot &&
+      input.roomIndex === this.roomIndex &&
+      typeof input.x === 'number' &&
+      typeof input.y === 'number'
+    ) {
+      const dist = Math.hypot(input.x - player.x, input.y - player.y);
+      if (dist < 340) {
+        const W = config.game.roomWidth;
+        const H = config.game.roomHeight;
+        player.x = Math.max(32, Math.min(W - 32, input.x));
+        player.y = Math.max(32, Math.min(H - 32, input.y));
+        if (typeof input.vx === 'number' && typeof input.vy === 'number' && !player.isDashing) {
+          player.vx = input.vx;
+          player.vy = input.vy;
+        }
+        this.lastClientSyncAt[socketId] = now;
+      }
+    }
 
     // 1. Handle Dash with 100% i-frames
     if (input.isDashing && now >= player.dashCooldownEndsAt && !player.isDashing) {
@@ -608,7 +652,7 @@ export class DungeonRoom {
 
       player.vx = dirX * stats.dashSpeed;
       player.vy = dirY * stats.dashSpeed;
-    } else if (!player.isDashing) {
+    } else if (!player.isDashing && (player.isBot || !this.lastClientSyncAt[socketId] || now - this.lastClientSyncAt[socketId] > 90)) {
       const frenzyBonus = player.combo >= 15 ? 1.15 : player.combo >= 8 ? 1.08 : 1.0;
       const stealthBonus = now < player.stealthedUntil ? 1.25 : 1.0;
       const targetSpeed = stats.moveSpeed * frenzyBonus * stealthBonus;
@@ -1024,7 +1068,10 @@ export class DungeonRoom {
     const dt = Math.min(0.06, (now - this.lastTickAt) / 1000);
     this.lastTickAt = now;
 
-    if (this.phase !== 'PLAYING') return;
+    if (this.phase !== 'PLAYING' || this.isTransitioningRoom) return;
+
+    const prevPhase = this.phase;
+    const prevCleared = this.roomClearAnnounced;
 
     this.updateAIHerbBots(dt, now);
     this.updateHazards(dt, now);
@@ -1034,10 +1081,14 @@ export class DungeonRoom {
     this.checkLiveDirectorIntervention(now);
     this.checkRoomClearance();
 
-    // Clean up expired visual events older than 1.2s
-    this.recentEvents = this.recentEvents.filter(ev => now - ev.timestamp < 1200);
+    // Keep recent FX events for 220ms (~4-5 ticks) so packets stay tiny
+    this.recentEvents = this.recentEvents.filter(ev => now - ev.timestamp < 220);
 
-    this.broadcastState();
+    const hasImportantChange =
+      this.phase !== prevPhase ||
+      this.roomClearAnnounced !== prevCleared;
+
+    this.broadcastState(!hasImportantChange);
   }
 
   /**
@@ -1303,8 +1354,12 @@ export class DungeonRoom {
         p.vy *= 0.3;
       }
 
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
+      // Only server-integrate position if player is a bot, dashing, or hasn't sent client-predicted coords in 90ms
+      const lastSync = this.lastClientSyncAt[p.id] || 0;
+      if (p.isBot || p.isDashing || now - lastSync > 90) {
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+      }
 
       // Pillar physical collision
       for (const pil of this.pillars) {
@@ -2253,9 +2308,9 @@ export class DungeonRoom {
   }
 
   public advanceToNextRoom(nextEncounterType: RoomEncounterType = 'STANDARD'): void {
-    if (this.enemies.length > 0) return;
+    if (this.enemies.length > 0 || this.isTransitioningRoom) return;
     const nextIdx = this.roomIndex + 1;
-    this.setupRoom(nextIdx, nextEncounterType);
+    void this.setupRoom(nextIdx, nextEncounterType);
   }
 
   private getPlayerEffectiveStats(player: PlayerEntity) {
@@ -2403,13 +2458,43 @@ export class DungeonRoom {
       height: H,
     };
 
+    const quantizedPlayers: Record<string, PlayerEntity> = {};
+    for (const [id, p] of Object.entries(this.players)) {
+      quantizedPlayers[id] = {
+        ...p,
+        x: Math.round(p.x),
+        y: Math.round(p.y),
+        vx: Math.round(p.vx),
+        vy: Math.round(p.vy),
+        angle: Math.round(p.angle * 100) / 100,
+        reviveProgress: p.reviveProgress ? Math.round(p.reviveProgress * 100) / 100 : 0,
+      };
+    }
+
+    const quantizedEnemies: EnemyEntity[] = this.enemies.map(e => ({
+      ...e,
+      x: Math.round(e.x),
+      y: Math.round(e.y),
+      vx: Math.round(e.vx),
+      vy: Math.round(e.vy),
+      aimAngle: typeof e.aimAngle === 'number' ? Math.round(e.aimAngle * 100) / 100 : undefined,
+    }));
+
+    const quantizedProjectiles: ProjectileEntity[] = this.projectiles.map(pr => ({
+      ...pr,
+      x: Math.round(pr.x),
+      y: Math.round(pr.y),
+      vx: Math.round(pr.vx),
+      vy: Math.round(pr.vy),
+    }));
+
     return {
       code: this.code,
       phase: this.phase,
       room,
-      players: this.players,
-      enemies: this.enemies,
-      projectiles: this.projectiles,
+      players: quantizedPlayers,
+      enemies: quantizedEnemies,
+      projectiles: quantizedProjectiles,
       recentEvents: this.recentEvents,
       directorDialogue: this.directorDialogue,
       directorAnger: Math.round(this.directorAnger),
@@ -2417,7 +2502,96 @@ export class DungeonRoom {
     };
   }
 
-  public broadcastState(): void {
-    this.io.to(this.code).emit('world:state', this.getState());
+  public getCompactTick() {
+    const now = Date.now();
+    const playersTick: Record<string, any> = {};
+    for (const [id, p] of Object.entries(this.players)) {
+      playersTick[id] = {
+        x: Math.round(p.x),
+        y: Math.round(p.y),
+        vx: Math.round(p.vx),
+        vy: Math.round(p.vy),
+        angle: Math.round(p.angle * 100) / 100,
+        currentHp: p.currentHp,
+        maxHp: p.maxHp,
+        shieldHp: p.shieldHp,
+        isAlive: p.isAlive,
+        isDashing: p.isDashing,
+        dashCooldownEndsAt: p.dashCooldownEndsAt,
+        dashEndsAt: p.dashEndsAt,
+        skillCooldownEndsAt: p.skillCooldownEndsAt,
+        skillActiveUntil: p.skillActiveUntil > now ? p.skillActiveUntil : 0,
+        stealthedUntil: p.stealthedUntil > now ? p.stealthedUntil : 0,
+        lastAttackAt: p.lastAttackAt,
+        invulnerableUntil: p.invulnerableUntil > now ? p.invulnerableUntil : 0,
+        kills: p.kills,
+        damageDealt: p.damageDealt,
+        gold: p.gold,
+        weaponLevel: p.weaponLevel,
+        combo: p.combo,
+        maxCombo: p.maxCombo,
+        ...(p.reviveProgress ? { reviveProgress: Math.round(p.reviveProgress * 100) / 100 } : {}),
+      };
+    }
+
+    const enemiesTick = this.enemies.map(e => ({
+      id: e.id,
+      type: e.type,
+      ...(e.isBoss ? { name: e.name, isBoss: true, bossPhase: e.bossPhase, bossPattern: e.bossPattern } : {}),
+      x: Math.round(e.x),
+      y: Math.round(e.y),
+      vx: Math.round(e.vx),
+      vy: Math.round(e.vy),
+      radius: e.radius,
+      currentHp: e.currentHp,
+      maxHp: e.maxHp,
+      color: e.color,
+      aiState: e.aiState,
+      ...(e.aiState === 'CHARGING' && typeof e.aimAngle === 'number'
+        ? { aimAngle: Math.round(e.aimAngle * 100) / 100 }
+        : {}),
+      ...(e.flashUntil && e.flashUntil > now ? { flashUntil: e.flashUntil } : {}),
+      ...(e.isElite ? { isElite: true, eliteModifier: e.eliteModifier } : {}),
+      ...(e.burnUntil && e.burnUntil > now ? { burnUntil: e.burnUntil } : {}),
+      ...(e.poisonUntil && e.poisonUntil > now ? { poisonUntil: e.poisonUntil } : {}),
+      ...(e.chillUntil && e.chillUntil > now ? { chillUntil: e.chillUntil } : {}),
+      ...(e.stunUntil && e.stunUntil > now ? { stunUntil: e.stunUntil } : {}),
+    }));
+
+    const projectilesTick = this.projectiles.map(pr => ({
+      id: pr.id,
+      fromPlayer: pr.fromPlayer,
+      x: Math.round(pr.x),
+      y: Math.round(pr.y),
+      vx: Math.round(pr.vx),
+      vy: Math.round(pr.vy),
+      radius: pr.radius,
+      color: pr.color,
+      ...(pr.isExplosive ? { isExplosive: true } : {}),
+      ...(pr.isCrit ? { isCrit: true } : {}),
+      ...(pr.element && pr.element !== 'NONE' ? { element: pr.element } : {}),
+    }));
+
+    return {
+      r: this.roomIndex,
+      c: this.enemies.length === 0,
+      p: playersTick,
+      e: enemiesTick,
+      pr: projectilesTick,
+      h: this.hearts.map(ht => ({ ...ht, x: Math.round(ht.x), y: Math.round(ht.y) })),
+      b: this.barrels.map(br => ({ ...br, x: Math.round(br.x), y: Math.round(br.y) })),
+      hz: this.hazards.map(hz => ({ ...hz, x: Math.round(hz.x), y: Math.round(hz.y) })),
+      ...(this.recentEvents.length > 0 ? { ev: this.recentEvents } : {}),
+      da: Math.round(this.directorAnger),
+      ...(now - this.directorDialogue.timestamp < 800 ? { dd: this.directorDialogue } : {}),
+    };
+  }
+
+  public broadcastState(volatile = false): void {
+    if (volatile && this.phase === 'PLAYING') {
+      this.io.to(this.code).volatile.emit('world:tick', this.getCompactTick());
+    } else {
+      this.io.to(this.code).emit('world:state', this.getState());
+    }
   }
 }

@@ -74,17 +74,19 @@ export class GameRenderer {
     ctx.restore();
   }
 
-  private getSmoothPos(id: string, targetX: number, targetY: number, vx: number, vy: number, dt: number) {
+  private getSmoothPos(id: string, targetX: number, targetY: number, dt: number, isLocal = false) {
+    if (isLocal) {
+      const direct = { x: targetX, y: targetY };
+      this.interpPositions.set(id, direct);
+      return direct;
+    }
     const prev = this.interpPositions.get(id);
-    if (!prev || Math.hypot(targetX - prev.x, targetY - prev.y) > 160) {
+    if (!prev || Math.hypot(targetX - prev.x, targetY - prev.y) > 180) {
       const fresh = { x: targetX, y: targetY };
       this.interpPositions.set(id, fresh);
       return fresh;
     }
-    // Velocity dead-reckoning + high-gain convergence for zero-jitter 60+ FPS rendering
-    prev.x += vx * dt * 0.35;
-    prev.y += vy * dt * 0.35;
-    const blend = Math.min(1, dt * 24);
+    const blend = Math.min(1, dt * 18);
     prev.x += (targetX - prev.x) * blend;
     prev.y += (targetY - prev.y) * blend;
     return prev;
@@ -103,20 +105,39 @@ export class GameRenderer {
     const roomW = world.room.width || 1200;
     const roomH = world.room.height || 800;
 
+    // 0. Client-side 60-144 FPS Dead-Reckoning Extrapolation between 20Hz server ticks
+    if (world.phase === 'PLAYING') {
+      const pad = 50;
+      for (const enemy of world.enemies) {
+        enemy.x = Math.max(pad, Math.min(roomW - pad, enemy.x + enemy.vx * dt));
+        enemy.y = Math.max(pad, Math.min(roomH - pad, enemy.y + enemy.vy * dt));
+      }
+      for (const p of Object.values(world.players)) {
+        if (p.id !== localPlayerId && p.isAlive) {
+          p.x = Math.max(pad, Math.min(roomW - pad, p.x + p.vx * dt));
+          p.y = Math.max(pad, Math.min(roomH - pad, p.y + p.vy * dt));
+        }
+      }
+      for (const proj of world.projectiles) {
+        proj.x += proj.vx * dt;
+        proj.y += proj.vy * dt;
+      }
+    }
+
     // 1. Camera Tracking with smooth Lerp
     if (localPlayer) {
       const smoothLocal = this.getSmoothPos(
         localPlayer.id,
         localPlayer.x,
         localPlayer.y,
-        localPlayer.vx,
-        localPlayer.vy,
-        dt
+        dt,
+        true
       );
       const targetCamX = smoothLocal.x - canvasWidth / 2;
       const targetCamY = smoothLocal.y - canvasHeight / 2;
-      this.cameraX += (targetCamX - this.cameraX) * 0.14;
-      this.cameraY += (targetCamY - this.cameraY) * 0.14;
+      const camBlend = Math.min(1, dt * 14);
+      this.cameraX += (targetCamX - this.cameraX) * camBlend;
+      this.cameraY += (targetCamY - this.cameraY) * camBlend;
     } else {
       this.cameraX = roomW / 2 - canvasWidth / 2;
       this.cameraY = roomH / 2 - canvasHeight / 2;
@@ -232,13 +253,14 @@ export class GameRenderer {
 
     // 6. Draw Enemies with Smooth 60 FPS Interpolation
     for (const enemy of world.enemies) {
-      const sp = this.getSmoothPos(enemy.id, enemy.x, enemy.y, enemy.vx, enemy.vy, dt);
+      const sp = this.getSmoothPos(enemy.id, enemy.x, enemy.y, dt, false);
       SpriteModels.drawEnemy(ctx, { ...enemy, x: sp.x, y: sp.y }, this.totalTime);
     }
 
     // 7. Draw Players with Smooth 60 FPS Interpolation & Motion Particles
     for (const player of Object.values(world.players)) {
-      const sp = this.getSmoothPos(player.id, player.x, player.y, player.vx, player.vy, dt);
+      const isLocal = player.id === localPlayerId;
+      const sp = this.getSmoothPos(player.id, player.x, player.y, dt, isLocal);
       const smoothPlayer: PlayerEntity = { ...player, x: sp.x, y: sp.y };
 
       if (player.isAlive) {
@@ -433,6 +455,22 @@ export class GameRenderer {
     ctx.strokeStyle = '#44403c';
     ctx.lineWidth = 2.5;
     ctx.strokeRect(pad, pad, w - pad * 2, h - pad * 2);
+
+    // 10. Pre-bake warm ambient torch glow into static offscreen canvas (saves 4 radial gradients per frame!)
+    const torches = [
+      { x: w * 0.25, y: pad },
+      { x: w * 0.75, y: pad },
+      { x: pad, y: h * 0.3 },
+      { x: w - pad, y: h * 0.3 },
+    ];
+    for (const torch of torches) {
+      const torchGrad = ctx.createRadialGradient(torch.x, torch.y, 8, torch.x, torch.y, 190);
+      torchGrad.addColorStop(0, 'rgba(234, 88, 12, 0.16)');
+      torchGrad.addColorStop(0.6, 'rgba(217, 119, 6, 0.06)');
+      torchGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = torchGrad;
+      ctx.fillRect(torch.x - 190, torch.y - 190, 380, 380);
+    }
   }
 
   private drawTorches(ctx: CanvasRenderingContext2D, w: number, h: number, time: number) {
@@ -542,46 +580,6 @@ export class GameRenderer {
   ) {
     const pad = 44;
     ctx.save();
-
-    const torches = [
-      { x: w * 0.25, y: pad },
-      { x: w * 0.75, y: pad },
-      { x: pad, y: h * 0.3 },
-      { x: w - pad, y: h * 0.3 },
-    ];
-
-    for (const torch of torches) {
-      const flick = Math.sin(this.totalTime * 14 + torch.x) * 6;
-      const torchGrad = ctx.createRadialGradient(
-        torch.x,
-        torch.y,
-        8,
-        torch.x,
-        torch.y,
-        190 + flick
-      );
-      torchGrad.addColorStop(0, 'rgba(234, 88, 12, 0.16)');
-      torchGrad.addColorStop(0.6, 'rgba(217, 119, 6, 0.06)');
-      torchGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-
-      ctx.fillStyle = torchGrad;
-      ctx.fillRect(torch.x - 200, torch.y - 200, 400, 400);
-    }
-
-    if (localPlayer) {
-      const playerGrad = ctx.createRadialGradient(
-        localPlayer.x,
-        localPlayer.y,
-        10,
-        localPlayer.x,
-        localPlayer.y,
-        150
-      );
-      playerGrad.addColorStop(0, 'rgba(245, 158, 11, 0.09)');
-      playerGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-      ctx.fillStyle = playerGrad;
-      ctx.fillRect(localPlayer.x - 150, localPlayer.y - 150, 300, 300);
-    }
 
     for (const mote of this.dustMotes) {
       mote.x += mote.vx * dt;
