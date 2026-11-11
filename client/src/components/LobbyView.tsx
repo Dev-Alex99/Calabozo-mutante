@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { PlayerClass, GameWorldState, CLASS_CONFIGS } from '../types';
-import { Shield, Crosshair, Sparkles, Users, Copy, Check, Play, Swords } from 'lucide-react';
+import { Users, Copy, Check, Play, Shield, Crosshair, Sparkles } from 'lucide-react';
 import { sfx } from '../audio/sfx';
 
 interface Props {
@@ -22,7 +22,7 @@ export const LobbyView: React.FC<Props> = ({
   isLoading,
   errorMessage,
 }) => {
-  const [playerName, setPlayerName] = useState(() => localStorage.getItem('calabozo_name') || 'Concursante');
+  const [playerName, setPlayerName] = useState(() => localStorage.getItem('calabozo_name') || 'Cruzado');
   const [roomCodeInput, setRoomCodeInput] = useState('');
   const [selectedClass, setSelectedClass] = useState<PlayerClass>('CAZADOR');
   const [activeTab, setActiveTab] = useState<'CREATE' | 'JOIN'>('CREATE');
@@ -51,91 +51,87 @@ export const LobbyView: React.FC<Props> = ({
     description: string;
     weapon: string;
     role: string;
-    color: string;
-    borderColor: string;
   }> = [
     {
       id: 'GUERRERO',
       name: 'Caballero Descafeinado',
       icon: '🛡️',
       role: 'Tanque / Melé Pesado',
-      weapon: 'Espadón de Oficina (Arco melé)',
-      description: 'Alta resistencia y golpes destructivos a corta distancia.',
-      color: 'bg-blue-950/60',
-      borderColor: 'border-blue-500',
+      weapon: 'Zweihänder de Hierro Forjado',
+      description: 'Armadura pesada (160 HP), espadazo amplio en arco y gran empuje.',
     },
     {
       id: 'CAZADOR',
       name: 'Cazador Desesperado',
       icon: '🏹',
-      role: 'Tirador Ágil / Fuego Rápido',
-      weapon: 'Ballesta de Precisión (Disparo continuo)',
-      description: 'Gran cadencia y velocidad de carrera. Balas con rebote natural.',
-      color: 'bg-emerald-950/60',
-      borderColor: 'border-emerald-500',
+      role: 'Tirador Ágil / Larga Distancia',
+      weapon: 'Ballesta de Precisión con Virotes',
+      description: 'Velocidad de carrera (100 HP) y virotes rápidos que rebotan.',
     },
     {
       id: 'MAGO',
       name: 'Mago Piromaniaco',
       icon: '🔮',
-      role: 'Daño en Área / Explosivo',
-      weapon: 'Orbes de Fuego Igneo (Daño de impacto + splash)',
-      description: 'Menos salud, pero sus proyectiles causan daño masivo en área.',
-      color: 'bg-purple-950/60',
-      borderColor: 'border-purple-500',
+      role: 'Daño en Área / Proyectil Ígneo',
+      weapon: 'Báculo de Roble y Orbes Igneos',
+      description: 'Menos salud (80 HP), pero sus orbes explotan en área con daño masivo.',
     },
   ];
 
   return (
-    <div className="fixed inset-0 bg-gray-950 flex items-center justify-center p-4 z-40 overflow-y-auto">
-      {/* Background Grid Accent */}
-      <div className="absolute inset-0 bg-[radial-gradient(#1f2937_1px,transparent_1px)] [background-size:24px_24px] opacity-40"></div>
+    <div className="fixed inset-0 bg-[#0c0a09] flex items-center justify-center p-4 z-40 overflow-y-auto">
+      {/* Heavy Medieval Iron Frame */}
+      <div className="relative max-w-xl w-full bg-[#141210] border-2 border-[#44403c] rounded-xl p-6 shadow-2xl flex flex-col items-center">
+        {/* Stone corner rivets */}
+        <div className="absolute top-2 left-2 w-2 h-2 rounded-full bg-[#78716c]"></div>
+        <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#78716c]"></div>
+        <div className="absolute bottom-2 left-2 w-2 h-2 rounded-full bg-[#78716c]"></div>
+        <div className="absolute bottom-2 right-2 w-2 h-2 rounded-full bg-[#78716c]"></div>
 
-      <div className="relative max-w-xl w-full bg-gray-900 border border-gray-700/80 rounded-2xl p-6 shadow-2xl flex flex-col items-center">
-        {/* Title & Badge */}
+        {/* Title & Crest */}
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-2xl animate-bounce">🏰</span>
-          <span className="text-xs uppercase font-mono font-bold tracking-widest text-red-400 bg-red-950/80 border border-red-500/40 px-2.5 py-0.5 rounded-full">
-            MINIMAX M3.1 FLASH POWERED
+          <span className="text-2xl">🏰</span>
+          <span className="text-[10px] uppercase font-cinzel font-bold tracking-widest text-[#d97706] bg-[#1c1917] border border-[#78350f] px-2.5 py-0.5 rounded">
+            DIRECTOR CON MINIMAX M3.1 FLASH
           </span>
         </div>
-        <h1 className="text-2xl md:text-3xl font-black font-mono tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-amber-400 to-yellow-400 uppercase text-center">
+        <h1 className="text-2xl md:text-3xl font-black font-cinzel tracking-wider text-[#f5f5f4] uppercase text-center">
           CALABOZO MUTANTE
         </h1>
-        <p className="text-xs text-gray-400 font-sans mt-0.5 mb-5 text-center">
-          Un roguelite cooperativo donde la IA muta las físicas de las salas en tiempo real.
+        <p className="text-xs text-[#a8a29e] font-serif italic mt-0.5 mb-5 text-center">
+          Roguelite cooperativo donde el Director muta las físicas de las cámaras en tiempo real.
         </p>
 
         {errorMessage && (
-          <div className="mb-4 w-full bg-red-950/80 border border-red-500 text-red-200 text-xs font-mono p-3 rounded-lg text-center">
+          <div className="mb-4 w-full bg-[#450a0a] border border-[#991b1b] text-[#fca5a5] text-xs font-cinzel p-2.5 rounded text-center">
             ⚠️ {errorMessage}
           </div>
         )}
 
         {!isInsideRoom ? (
           /* ================= STEP 1: CREATE OR JOIN ================= */
-          <div className="w-full flex flex-col gap-4">
+          <div className="w-full flex flex-col gap-3.5">
             {/* Player Name Input */}
             <div>
-              <label className="block text-xs font-mono font-bold text-gray-300 uppercase mb-1">
-                Tu Apodo de Concursante
+              <label className="block text-[11px] font-cinzel font-bold text-[#d6d3d1] uppercase mb-1">
+                Nombre de tu Héroe
               </label>
               <input
                 type="text"
                 value={playerName}
                 onChange={e => handleNameChange(e.target.value)}
                 maxLength={16}
-                placeholder="Escribe tu apodo..."
-                className="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-sm text-gray-100 font-mono focus:outline-none focus:border-amber-400"
+                placeholder="Escribe tu nombre..."
+                className="w-full px-3 py-2 bg-[#0c0a09] border border-[#44403c] rounded text-sm text-[#f5f5f4] font-cinzel focus:outline-none focus:border-[#d97706]"
               />
             </div>
 
             {/* Class Selection */}
             <div>
-              <label className="block text-xs font-mono font-bold text-gray-300 uppercase mb-2">
-                Selecciona tu Clase de Héroe
+              <label className="block text-[11px] font-cinzel font-bold text-[#d6d3d1] uppercase mb-1.5">
+                Gremio de Aventurero
               </label>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                 {CLASSES.map(cls => {
                   const isSelected = selectedClass === cls.id;
                   const stats = CLASS_CONFIGS[cls.id];
@@ -146,22 +142,24 @@ export const LobbyView: React.FC<Props> = ({
                         setSelectedClass(cls.id);
                         sfx.playShoot();
                       }}
-                      className={`text-left p-3 rounded-xl border transition-all ${
+                      className={`text-left p-2.5 rounded border transition-all ${
                         isSelected
-                          ? `${cls.color} ${cls.borderColor} shadow-lg scale-[1.02]`
-                          : 'bg-gray-950/60 border-gray-800 hover:border-gray-700'
+                          ? 'bg-[#1c1917] border-[#d97706] shadow-md shadow-black'
+                          : 'bg-[#0c0a09] border-[#292524] hover:border-[#44403c]'
                       }`}
                     >
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xl">{cls.icon}</span>
-                        <div className="font-bold text-xs font-mono text-gray-100">{cls.name}</div>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span className="text-lg">{cls.icon}</span>
+                        <div className="font-bold text-xs font-cinzel text-[#f5f5f4] leading-tight">
+                          {cls.name}
+                        </div>
                       </div>
-                      <div className="text-[10px] text-gray-400 font-sans leading-tight mb-2">
+                      <div className="text-[10px] text-[#a8a29e] font-serif leading-tight mb-2">
                         {cls.description}
                       </div>
-                      <div className="text-[9px] font-mono text-gray-500 border-t border-gray-800/80 pt-1.5 flex justify-between">
+                      <div className="text-[9px] font-cinzel text-[#78716c] border-t border-[#292524] pt-1 flex justify-between">
                         <span>❤️ {stats.maxHp} HP</span>
-                        <span>⚡ {stats.attackDamage} DMG</span>
+                        <span>⚡ {stats.attackDamage} Daño</span>
                       </div>
                     </button>
                   );
@@ -170,26 +168,26 @@ export const LobbyView: React.FC<Props> = ({
             </div>
 
             {/* Tabs: Create vs Join */}
-            <div className="flex border-b border-gray-800 mt-2">
+            <div className="flex border-b border-[#292524] mt-1">
               <button
                 onClick={() => setActiveTab('CREATE')}
-                className={`flex-1 py-2 text-xs font-mono font-bold border-b-2 transition ${
+                className={`flex-1 py-2 text-xs font-cinzel font-bold border-b-2 transition ${
                   activeTab === 'CREATE'
-                    ? 'border-amber-400 text-amber-400'
-                    : 'border-transparent text-gray-500 hover:text-gray-300'
+                    ? 'border-[#d97706] text-[#d97706]'
+                    : 'border-transparent text-[#78716c] hover:text-[#d6d3d1]'
                 }`}
               >
-                CREAR MAZMORRA
+                FORJAR MAZMORRA
               </button>
               <button
                 onClick={() => setActiveTab('JOIN')}
-                className={`flex-1 py-2 text-xs font-mono font-bold border-b-2 transition ${
+                className={`flex-1 py-2 text-xs font-cinzel font-bold border-b-2 transition ${
                   activeTab === 'JOIN'
-                    ? 'border-amber-400 text-amber-400'
-                    : 'border-transparent text-gray-500 hover:text-gray-300'
+                    ? 'border-[#d97706] text-[#d97706]'
+                    : 'border-transparent text-[#78716c] hover:text-[#d6d3d1]'
                 }`}
               >
-                UNIRSE POR CÓDIGO
+                UNIRSE CON CÓDIGO
               </button>
             </div>
 
@@ -200,9 +198,9 @@ export const LobbyView: React.FC<Props> = ({
                   onCreateRoom(playerName, selectedClass);
                 }}
                 disabled={isLoading || !playerName.trim()}
-                className="w-full py-3 bg-gradient-to-r from-red-600 to-amber-500 hover:from-red-500 hover:to-amber-400 text-gray-950 font-black rounded-xl text-sm font-mono tracking-wider transition shadow-lg shadow-amber-500/20 disabled:opacity-50"
+                className="w-full py-2.5 bg-[#78350f] hover:bg-[#92400e] text-[#fef3c7] font-bold rounded text-xs font-cinzel tracking-wider transition border border-[#b45309] shadow-lg disabled:opacity-50"
               >
-                {isLoading ? 'CREANDO SALA...' : 'ABRIR NUEVA MAZMORRA'}
+                {isLoading ? 'ABRIENDO MAZMORRA...' : 'ABRIR NUEVO CALABOZO'}
               </button>
             ) : (
               <div className="flex flex-col gap-2">
@@ -212,7 +210,7 @@ export const LobbyView: React.FC<Props> = ({
                   onChange={e => setRoomCodeInput(e.target.value.toUpperCase())}
                   maxLength={4}
                   placeholder="CÓDIGO DE 4 LETRAS"
-                  className="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-sm text-center tracking-widest text-yellow-400 font-mono font-black focus:outline-none focus:border-amber-400"
+                  className="w-full px-3 py-2 bg-[#0c0a09] border border-[#44403c] rounded text-sm text-center tracking-widest text-[#d97706] font-cinzel font-black focus:outline-none focus:border-[#d97706]"
                 />
                 <button
                   onClick={() => {
@@ -220,42 +218,42 @@ export const LobbyView: React.FC<Props> = ({
                     onJoinRoom(roomCodeInput, playerName, selectedClass);
                   }}
                   disabled={isLoading || roomCodeInput.length !== 4 || !playerName.trim()}
-                  className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-gray-950 font-black rounded-xl text-sm font-mono tracking-wider transition shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                  className="w-full py-2.5 bg-[#14532d] hover:bg-[#166534] text-[#f0fdf4] font-bold rounded text-xs font-cinzel tracking-wider transition border border-[#15803d] shadow-lg disabled:opacity-50"
                 >
-                  {isLoading ? 'CONECTANDO...' : 'ENTRAR AL CALABOZO'}
+                  {isLoading ? 'ENTRANDO...' : 'ENTRAR AL CALABOZO'}
                 </button>
               </div>
             )}
           </div>
         ) : (
           /* ================= STEP 2: LOBBY ROOM WAITING ================= */
-          <div className="w-full flex flex-col gap-4">
+          <div className="w-full flex flex-col gap-3.5">
             {/* Room Code Badge */}
-            <div className="bg-gray-950/80 border border-yellow-500/40 rounded-xl p-3 flex items-center justify-between">
+            <div className="bg-[#0c0a09] border border-[#44403c] rounded-lg p-3 flex items-center justify-between">
               <div>
-                <span className="text-[10px] font-mono text-gray-400 uppercase tracking-widest block">
-                  CÓDIGO DE LA MAZMORRA
+                <span className="text-[9px] font-cinzel text-[#a8a29e] uppercase tracking-wider block">
+                  CÓDIGO DEL CALABOZO
                 </span>
-                <span className="text-2xl font-black font-mono tracking-widest text-yellow-400">
+                <span className="text-2xl font-black font-cinzel tracking-widest text-[#d97706]">
                   {world.code}
                 </span>
               </div>
               <button
                 onClick={handleCopyCode}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-mono rounded-lg transition"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#1c1917] hover:bg-[#292524] text-[#d6d3d1] text-xs font-cinzel rounded border border-[#44403c] transition"
               >
-                {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                {copied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
                 {copied ? '¡COPIADO!' : 'COPIAR'}
               </button>
             </div>
 
-            {/* Players in Lobby */}
+            {/* Squad Members */}
             <div>
-              <div className="text-xs font-mono text-gray-400 mb-2 flex items-center justify-between">
+              <div className="text-[11px] font-cinzel text-[#a8a29e] mb-1.5 flex items-center justify-between">
                 <span className="flex items-center gap-1">
-                  <Users size={14} /> ESCUADRA (MÁXIMO 4):
+                  <Users size={13} /> ESCUADRA (MÁXIMO 4):
                 </span>
-                <span className="text-yellow-400 font-bold">
+                <span className="text-[#d97706] font-bold">
                   {Object.keys(world.players).length} / 4
                 </span>
               </div>
@@ -264,16 +262,16 @@ export const LobbyView: React.FC<Props> = ({
                 {Object.values(world.players).map(p => (
                   <div
                     key={p.id}
-                    className="flex items-center gap-3 bg-gray-950 border border-gray-800 p-2.5 rounded-xl"
+                    className="flex items-center gap-2.5 bg-[#0c0a09] border border-[#292524] p-2 rounded"
                   >
-                    <span className="text-xl">
+                    <span className="text-lg">
                       {p.classType === 'GUERRERO' ? '🛡️' : p.classType === 'CAZADOR' ? '🏹' : '🔮'}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="text-xs font-mono font-bold text-gray-200 truncate flex items-center gap-1">
+                      <div className="text-xs font-cinzel font-bold text-[#f5f5f4] truncate flex items-center gap-1">
                         {p.name} {p.isHost && '👑'}
                       </div>
-                      <div className="text-[10px] text-gray-500 font-mono">
+                      <div className="text-[10px] text-[#78716c] font-cinzel">
                         {p.classType} • {p.id === localPlayerId ? 'Tú' : 'Aliado'}
                       </div>
                     </div>
@@ -283,10 +281,10 @@ export const LobbyView: React.FC<Props> = ({
             </div>
 
             {/* Controls Guide */}
-            <div className="bg-gray-950/50 border border-gray-800/80 rounded-xl p-3 text-[11px] font-mono text-gray-400 leading-relaxed">
-              <span className="text-yellow-400 font-bold block mb-1">🎮 CONTROLES:</span>
+            <div className="bg-[#0c0a09] border border-[#292524] rounded-lg p-2.5 text-[11px] font-cinzel text-[#a8a29e] leading-relaxed">
+              <span className="text-[#d97706] font-bold block mb-0.5">CONTROLES DE COMBATE:</span>
               <div>• <strong>W, A, S, D</strong>: Moverse con inercia</div>
-              <div>• <strong>MOUSE</strong>: Apuntar en 360° • <strong>CLIC</strong>: Atacar</div>
+              <div>• <strong>RATÓN</strong>: Apuntar en 360° • <strong>CLIC</strong>: Atacar</div>
               <div>• <strong>ESPACIO / SHIFT</strong>: Dash evasivo con invulnerabilidad</div>
             </div>
 
@@ -297,13 +295,13 @@ export const LobbyView: React.FC<Props> = ({
                   sfx.playRoomClear();
                   onStartGame();
                 }}
-                className="w-full py-3.5 bg-gradient-to-r from-red-600 via-amber-500 to-yellow-500 hover:from-red-500 hover:to-amber-400 text-gray-950 font-black rounded-xl text-sm font-mono tracking-wider transition shadow-lg shadow-amber-500/25 flex items-center justify-center gap-2"
+                className="w-full py-3 bg-[#78350f] hover:bg-[#92400e] text-[#fef3c7] font-bold rounded-lg text-xs font-cinzel tracking-wider transition border border-[#b45309] shadow-lg flex items-center justify-center gap-2"
               >
-                <Play size={18} className="fill-gray-950" /> COMENZAR LA EXPEDICIÓN
+                <Play size={15} className="fill-[#fef3c7]" /> COMENZAR LA EXPEDICIÓN
               </button>
             ) : (
-              <div className="text-center text-xs font-mono text-gray-500 italic py-2 animate-pulse">
-                Esperando a que el líder inicie la partida...
+              <div className="text-center text-xs font-cinzel text-[#78716c] italic py-1 animate-pulse">
+                Esperando la orden del líder de la expedición...
               </div>
             )}
           </div>

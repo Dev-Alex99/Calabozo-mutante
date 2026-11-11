@@ -30,7 +30,7 @@ export const TouchControls: React.FC<Props> = ({ onMoveChange, onAttackChange, o
     const dx = touch.clientX - centerX;
     const dy = touch.clientY - centerY;
     const dist = Math.hypot(dx, dy);
-    const maxRadius = 40;
+    const maxRadius = 38;
 
     const clampedX = dist > maxRadius ? (dx / dist) * maxRadius : dx;
     const clampedY = dist > maxRadius ? (dy / dist) * maxRadius : dy;
@@ -50,7 +50,7 @@ export const TouchControls: React.FC<Props> = ({ onMoveChange, onAttackChange, o
     const dx = touch.clientX - centerX;
     const dy = touch.clientY - centerY;
     const dist = Math.hypot(dx, dy);
-    const maxRadius = 40;
+    const maxRadius = 38;
 
     const clampedX = dist > maxRadius ? (dx / dist) * maxRadius : dx;
     const clampedY = dist > maxRadius ? (dy / dist) * maxRadius : dy;
@@ -66,16 +66,16 @@ export const TouchControls: React.FC<Props> = ({ onMoveChange, onAttackChange, o
 
   return (
     <div className="fixed inset-0 pointer-events-none z-30 flex justify-between items-end p-6 select-none">
-      {/* Left Joystick: Movement */}
+      {/* Left Joystick: Movement (Hammered Iron & Brass) */}
       <div
         ref={leftStickRef}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        className="w-28 h-28 rounded-full bg-gray-900/60 border-2 border-gray-600/60 backdrop-blur-sm pointer-events-auto flex items-center justify-center relative touch-none"
+        className="w-28 h-28 rounded-full bg-[#141210]/80 border-2 border-[#44403c] shadow-2xl pointer-events-auto flex items-center justify-center relative touch-none"
       >
         <div
-          className="w-12 h-12 rounded-full bg-cyan-500/80 shadow-md shadow-cyan-500/40 pointer-events-none absolute transition-transform duration-75"
+          className="w-12 h-12 rounded-full bg-[#78350f] border-2 border-[#d97706] shadow-md pointer-events-none absolute transition-transform duration-75"
           style={{ transform: `translate(${leftThumb.x}px, ${leftThumb.y}px)` }}
         ></div>
       </div>
@@ -85,18 +85,18 @@ export const TouchControls: React.FC<Props> = ({ onMoveChange, onAttackChange, o
         {/* Dash Button */}
         <button
           onTouchStart={onDash}
-          className="w-16 h-16 rounded-full bg-cyan-600 active:bg-cyan-400 border-2 border-cyan-400 text-white flex items-center justify-center shadow-lg active:scale-95 transition"
+          className="w-14 h-14 rounded-full bg-[#1c1917] active:bg-[#292524] border-2 border-[#d97706] text-[#fef3c7] flex items-center justify-center shadow-lg active:scale-95 transition"
         >
-          <Zap size={24} className="fill-white" />
+          <Zap size={22} className="fill-[#d97706] text-[#d97706]" />
         </button>
 
         {/* Attack Button */}
         <button
           onTouchStart={() => onAttackChange(true, 0)}
           onTouchEnd={() => onAttackChange(false, 0)}
-          className="w-20 h-20 rounded-full bg-red-600 active:bg-red-500 border-2 border-red-400 text-white flex items-center justify-center shadow-lg active:scale-95 transition"
+          className="w-20 h-20 rounded-full bg-[#991b1b] active:bg-[#7f1d1d] border-2 border-[#ef4444] text-white flex items-center justify-center shadow-2xl active:scale-95 transition"
         >
-          <Crosshair size={32} />
+          <Crosshair size={30} />
         </button>
       </div>
     </div>

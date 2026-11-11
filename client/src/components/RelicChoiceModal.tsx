@@ -1,6 +1,5 @@
 import React from 'react';
 import { Relic } from '../types';
-import { Sparkles, Award } from 'lucide-react';
 import { sfx } from '../audio/sfx';
 
 interface Props {
@@ -15,38 +14,44 @@ export const RelicChoiceModal: React.FC<Props> = ({ relics, onSelect }) => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-40 flex items-center justify-center p-4">
-      <div className="bg-gray-900 border-2 border-yellow-500/60 rounded-2xl max-w-2xl w-full p-6 shadow-2xl shadow-yellow-950/50 flex flex-col items-center">
-        <div className="text-4xl mb-2 animate-bounce">🎁</div>
-        <h2 className="text-xl md:text-2xl font-black text-yellow-400 font-mono tracking-wider uppercase text-center">
-          RECOMPENSA DEL CALABOZO
+    <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-40 flex items-center justify-center p-4">
+      <div className="bg-[#141210] border-2 border-[#78716c] rounded-xl max-w-2xl w-full p-6 shadow-2xl flex flex-col items-center relative">
+        {/* Stone corner rivets */}
+        <div className="absolute top-2 left-2 w-2 h-2 rounded-full bg-[#a8a29e]"></div>
+        <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#a8a29e]"></div>
+        <div className="absolute bottom-2 left-2 w-2 h-2 rounded-full bg-[#a8a29e]"></div>
+        <div className="absolute bottom-2 right-2 w-2 h-2 rounded-full bg-[#a8a29e]"></div>
+
+        <div className="text-3xl mb-1">🎁</div>
+        <h2 className="text-xl md:text-2xl font-black text-[#d97706] font-cinzel tracking-wider uppercase text-center">
+          BOTÍN DEL CALABOZO
         </h2>
-        <p className="text-sm text-gray-400 text-center font-sans mt-1 mb-6">
-          El Director te ofrece tres artefactos mutados. Elige sabiamente:
+        <p className="text-xs text-[#a8a29e] text-center font-serif italic mt-0.5 mb-5">
+          El Director te ofrece tres artefactos arcanos. Elige uno para tu inventario:
         </p>
 
-        {/* 3 Relic Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
+        {/* 3 Relic Tablets */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 w-full">
           {relics.map(relic => (
             <div
               key={relic.id}
-              className="bg-gray-950/80 border border-gray-700 hover:border-yellow-400 rounded-xl p-4 flex flex-col justify-between transition-all hover:scale-[1.03] group hover:shadow-lg hover:shadow-yellow-500/20"
+              className="bg-[#1c1917] border border-[#44403c] hover:border-[#d97706] rounded-lg p-3.5 flex flex-col justify-between transition-all hover:-translate-y-1 group"
             >
               <div>
                 <div className="text-3xl mb-2 text-center">{relic.icon}</div>
-                <h3 className="font-bold text-gray-100 text-center font-mono text-sm leading-snug">
+                <h3 className="font-bold text-[#f5f5f4] text-center font-cinzel text-xs leading-snug">
                   {relic.name}
                 </h3>
-                <p className="text-xs text-gray-400 italic text-center mt-1 leading-snug font-sans">
+                <p className="text-[11px] text-[#a8a29e] italic text-center mt-1 leading-snug font-serif">
                   "{relic.lore}"
                 </p>
 
-                <div className="mt-4 pt-3 border-t border-gray-800">
-                  <p className="text-xs font-semibold text-emerald-400 font-sans leading-relaxed">
-                    ✨ {relic.buffDescription}
+                <div className="mt-3 pt-2.5 border-t border-[#292524]">
+                  <p className="text-[11px] font-semibold text-emerald-400 font-sans leading-relaxed">
+                    ✦ {relic.buffDescription}
                   </p>
                   {relic.curseDescription && (
-                    <p className="text-xs font-semibold text-red-400 font-sans mt-1 leading-relaxed">
+                    <p className="text-[11px] font-semibold text-rose-400 font-sans mt-1 leading-relaxed">
                       ⚠️ {relic.curseDescription}
                     </p>
                   )}
@@ -55,7 +60,7 @@ export const RelicChoiceModal: React.FC<Props> = ({ relics, onSelect }) => {
 
               <button
                 onClick={() => handleSelect(relic.id)}
-                className="mt-5 w-full py-2 bg-gradient-to-r from-yellow-600 to-amber-500 hover:from-yellow-500 hover:to-amber-400 text-gray-950 font-bold rounded-lg text-xs font-mono uppercase tracking-wider transition shadow-md"
+                className="mt-4 w-full py-2 bg-[#78350f] hover:bg-[#92400e] text-[#fef3c7] font-bold rounded text-xs font-cinzel tracking-wider transition border border-[#b45309]"
               >
                 EQUIPAR
               </button>

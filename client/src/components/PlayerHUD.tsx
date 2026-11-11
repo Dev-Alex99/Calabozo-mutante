@@ -1,6 +1,6 @@
 import React from 'react';
 import { PlayerEntity, CLASS_CONFIGS } from '../types';
-import { Heart, Zap, Shield, Sparkles } from 'lucide-react';
+import { Heart, Zap, Sparkles } from 'lucide-react';
 
 interface Props {
   player: PlayerEntity;
@@ -21,12 +21,12 @@ export const PlayerHUD: React.FC<Props> = ({ player, roomIndex, totalRooms, enem
   const dashPct = dashReady ? 100 : Math.max(0, 100 - (dashLeft / dashCooldown) * 100);
 
   return (
-    <div className="absolute bottom-4 left-4 z-20 pointer-events-none flex flex-col gap-2 max-w-sm">
-      {/* Relics Row */}
+    <div className="absolute bottom-4 left-4 z-20 pointer-events-none flex flex-col gap-2 max-w-xs">
+      {/* Relics Row (Parchment & Iron) */}
       {player.relics.length > 0 && (
-        <div className="flex items-center gap-1.5 bg-gray-900/80 backdrop-blur-sm border border-yellow-500/30 px-3 py-1.5 rounded-lg">
-          <span className="text-[10px] font-bold text-yellow-400 uppercase tracking-widest font-mono flex items-center gap-1">
-            <Sparkles size={12} /> Reliquias:
+        <div className="flex items-center gap-1.5 bg-[#141210]/95 border border-[#44403c] px-2.5 py-1 rounded shadow-lg">
+          <span className="text-[10px] font-bold text-[#d97706] uppercase tracking-wider font-cinzel flex items-center gap-1">
+            <Sparkles size={11} /> Reliquias:
           </span>
           <div className="flex items-center gap-1">
             {player.relics.map(r => (
@@ -42,62 +42,59 @@ export const PlayerHUD: React.FC<Props> = ({ player, roomIndex, totalRooms, enem
         </div>
       )}
 
-      {/* Main Health & Stamina Card */}
-      <div className="bg-gray-900/90 backdrop-blur-md border border-gray-700/80 rounded-xl p-3 shadow-xl flex flex-col gap-2">
+      {/* Main Health & Stamina Plaque */}
+      <div className="bg-[#141210]/95 border-2 border-[#44403c] rounded-lg p-3 shadow-2xl flex flex-col gap-2 relative">
+        {/* Stone corner rivets */}
+        <div className="absolute top-1 left-1 w-1 h-1 rounded-full bg-[#78716c]"></div>
+        <div className="absolute top-1 right-1 w-1 h-1 rounded-full bg-[#78716c]"></div>
+        <div className="absolute bottom-1 left-1 w-1 h-1 rounded-full bg-[#78716c]"></div>
+        <div className="absolute bottom-1 right-1 w-1 h-1 rounded-full bg-[#78716c]"></div>
+
         {/* Top: Class & Level */}
-        <div className="flex items-center justify-between text-xs font-mono">
+        <div className="flex items-center justify-between text-xs font-cinzel">
           <div className="flex items-center gap-1.5">
-            <span
-              className={`w-2.5 h-2.5 rounded-full ${
-                player.classType === 'GUERRERO'
-                  ? 'bg-blue-500'
-                  : player.classType === 'CAZADOR'
-                  ? 'bg-emerald-500'
-                  : 'bg-purple-500'
-              }`}
-            ></span>
-            <span className="font-bold text-gray-200">{player.name}</span>
-            <span className="text-gray-400">({player.classType})</span>
+            <span className="font-bold text-[#e7e5e4]">{player.name}</span>
+            <span className="text-[#a8a29e] text-[10px]">({player.classType})</span>
           </div>
-          <span className="text-yellow-400 font-bold">
-            ⚔️ {enemiesRemaining > 0 ? `${enemiesRemaining} VIVOS` : 'SALA LIMPIA'}
+          <span className="text-[#d97706] font-bold text-[11px]">
+            {enemiesRemaining > 0 ? `⚔️ ${enemiesRemaining} ENEMIGOS` : '✓ CÁMARA PURGADA'}
           </span>
         </div>
 
-        {/* Health Bar */}
+        {/* Health Bar (Hammered Iron & Crimson) */}
         <div>
-          <div className="flex justify-between text-[11px] font-mono text-gray-300 mb-1">
-            <span className="flex items-center gap-1 text-red-400 font-bold">
-              <Heart size={12} className="fill-red-500" /> SALUD
+          <div className="flex justify-between text-[10px] font-cinzel text-[#a8a29e] mb-1">
+            <span className="flex items-center gap-1 text-[#ef4444] font-bold">
+              <Heart size={11} className="fill-[#b91c1c] text-[#b91c1c]" /> SALUD
             </span>
             <span>
               {player.currentHp} / {player.maxHp}
             </span>
           </div>
-          <div className="w-full bg-gray-950 h-3.5 rounded-full border border-gray-800 overflow-hidden p-0.5">
+          <div className="w-full bg-[#0c0a09] h-3.5 rounded border border-[#292524] overflow-hidden p-0.5">
             <div
-              className={`h-full rounded-full transition-all duration-150 ${
-                hpPct > 50 ? 'bg-emerald-500' : hpPct > 25 ? 'bg-amber-500' : 'bg-red-500 animate-pulse'
+              className={`h-full rounded-sm transition-all duration-150 ${
+                hpPct > 50 ? 'bg-[#991b1b]' : hpPct > 25 ? 'bg-[#b45309]' : 'bg-[#dc2626] animate-pulse'
               }`}
               style={{ width: `${hpPct}%` }}
             ></div>
           </div>
         </div>
 
-        {/* Dash Cooldown Bar */}
+        {/* Dash Stamina */}
         <div>
-          <div className="flex justify-between text-[10px] font-mono text-gray-400 mb-0.5">
-            <span className="flex items-center gap-1 text-cyan-400">
-              <Zap size={11} className="fill-cyan-400" /> DASH (ESPACIO / SHIFT)
+          <div className="flex justify-between text-[9px] font-cinzel text-[#78716c] mb-0.5">
+            <span className="flex items-center gap-1 text-amber-500">
+              <Zap size={10} className="fill-amber-500" /> DASH (ESPACIO / SHIFT)
             </span>
-            <span className={dashReady ? 'text-cyan-300 font-bold' : 'text-gray-500'}>
-              {dashReady ? 'LISTO' : 'RECARGANDO'}
+            <span className={dashReady ? 'text-amber-400 font-bold' : 'text-[#57534e]'}>
+              {dashReady ? 'CARGADO' : 'RECUPERANDO'}
             </span>
           </div>
-          <div className="w-full bg-gray-950 h-2 rounded-full border border-gray-800 overflow-hidden">
+          <div className="w-full bg-[#0c0a09] h-1.5 rounded border border-[#292524] overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all duration-75 ${
-                dashReady ? 'bg-cyan-400 shadow-sm shadow-cyan-400' : 'bg-cyan-700/60'
+              className={`h-full rounded-sm transition-all duration-75 ${
+                dashReady ? 'bg-amber-600' : 'bg-stone-700'
               }`}
               style={{ width: `${dashPct}%` }}
             ></div>

@@ -650,7 +650,13 @@ export class DungeonRoom {
         let hit = false;
         for (const pl of Object.values(this.players)) {
           if (!pl.isAlive || pl.isDashing) continue;
-          if (Math.hypot(pl.x - p.x, pl.y - p.y) < pl.avatarIndex * 0 + 24 + p.radius) {
+          const r = 24 + p.radius;
+          const dx = pl.x - p.x;
+          if (Math.abs(dx) > r) continue;
+          const dy = pl.y - p.y;
+          if (Math.abs(dy) > r) continue;
+
+          if (dx * dx + dy * dy < r * r) {
             this.damagePlayer(pl, p.damage);
             hit = true;
             break;
@@ -664,7 +670,13 @@ export class DungeonRoom {
         let hit = false;
         for (let i = this.enemies.length - 1; i >= 0; i--) {
           const e = this.enemies[i];
-          if (Math.hypot(e.x - p.x, e.y - p.y) < e.radius + p.radius) {
+          const r = e.radius + p.radius;
+          const dx = e.x - p.x;
+          if (Math.abs(dx) > r) continue;
+          const dy = e.y - p.y;
+          if (Math.abs(dy) > r) continue;
+
+          if (dx * dx + dy * dy < r * r) {
             hit = true;
             e.currentHp -= p.damage;
             this.telemetry.totalDamageDealt += p.damage;

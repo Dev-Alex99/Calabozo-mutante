@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
-import { GameWorldState, PlayerEntity } from '../types';
-import { Trophy, Skull, RotateCcw, Swords, Flame } from 'lucide-react';
+import { GameWorldState } from '../types';
+import { Swords, RotateCcw } from 'lucide-react';
 import { sfx } from '../audio/sfx';
 import confetti from 'canvas-confetti';
 
@@ -18,9 +18,10 @@ export const EndGameModal: React.FC<Props> = ({ world, isHost, onRestart }) => {
       sfx.playVictory();
       try {
         confetti({
-          particleCount: 120,
-          spread: 80,
+          particleCount: 100,
+          spread: 70,
           origin: { y: 0.6 },
+          colors: ['#d97706', '#f59e0b', '#78350f', '#991b1b'],
         });
       } catch {}
     } else {
@@ -29,43 +30,47 @@ export const EndGameModal: React.FC<Props> = ({ world, isHost, onRestart }) => {
   }, [isVictory]);
 
   const playersList = Object.values(world.players).sort((a, b) => b.damageDealt - a.damageDealt);
-  const mvp = playersList[0];
 
   return (
-    <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
-      <div className={`bg-gray-900 border-2 ${isVictory ? 'border-amber-500 shadow-amber-950/60' : 'border-red-600 shadow-red-950/60'} rounded-2xl max-w-lg w-full p-6 shadow-2xl flex flex-col items-center text-center animate-in fade-in zoom-in-95 duration-200`}>
-        {/* Big Icon */}
-        <div className="text-5xl mb-3">
-          {isVictory ? '🏆' : '💀'}
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className={`bg-[#141210] border-2 ${isVictory ? 'border-[#d97706]' : 'border-[#991b1b]'} rounded-xl max-w-lg w-full p-6 shadow-2xl flex flex-col items-center text-center relative`}>
+        {/* Stone corner rivets */}
+        <div className="absolute top-2 left-2 w-2 h-2 rounded-full bg-[#78716c]"></div>
+        <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#78716c]"></div>
+        <div className="absolute bottom-2 left-2 w-2 h-2 rounded-full bg-[#78716c]"></div>
+        <div className="absolute bottom-2 right-2 w-2 h-2 rounded-full bg-[#78716c]"></div>
+
+        <div className="text-4xl mb-2">
+          {isVictory ? '👑' : '💀'}
         </div>
 
-        <h2 className={`text-2xl font-black font-mono tracking-wider uppercase ${isVictory ? 'text-amber-400' : 'text-red-500'}`}>
-          {isVictory ? '¡VICTORIA SOBRE EL ALGORITMO!' : 'EXPEDIENTE CERRADO — GAME OVER'}
+        <h2 className={`text-xl md:text-2xl font-black font-cinzel tracking-wider uppercase ${isVictory ? 'text-[#d97706]' : 'text-[#dc2626]'}`}>
+          {isVictory ? 'VICTORIA SOBRE EL MAESTRE' : 'EXPEDIENTE CERRADO — DERROTA'}
         </h2>
 
         {/* Director Quote */}
-        <div className="bg-gray-950/80 border border-gray-800 rounded-xl p-3 my-4 w-full text-xs md:text-sm text-gray-300 italic font-sans leading-relaxed">
+        <div className="bg-[#1c1917] border border-[#292524] rounded-lg p-3 my-3 w-full text-xs text-[#d6d3d1] italic font-serif leading-relaxed">
           "{world.directorDialogue.text}"
         </div>
 
-        {/* Stats Table */}
-        <div className="w-full bg-gray-950/60 rounded-xl p-4 border border-gray-800/80 my-2">
-          <div className="text-xs uppercase font-mono tracking-widest text-gray-400 mb-3 flex items-center justify-center gap-1.5 font-bold">
-            <Swords size={14} className="text-yellow-400" /> RENDIMIENTO DE LA ESCUADRA
+        {/* Squad Performance Register */}
+        <div className="w-full bg-[#1c1917] rounded-lg p-3.5 border border-[#44403c] my-2">
+          <div className="text-[11px] uppercase font-cinzel tracking-wider text-[#d97706] mb-2.5 flex items-center justify-center gap-1.5 font-bold">
+            <Swords size={13} /> REGISTRO DE COMBATE DE LA ESCUADRA
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {playersList.map((p, idx) => (
               <div
                 key={p.id}
-                className="flex items-center justify-between text-xs font-mono p-2 rounded-lg bg-gray-900/80 border border-gray-800"
+                className="flex items-center justify-between text-xs font-cinzel p-2 rounded bg-[#141210] border border-[#292524]"
               >
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-gray-400">#{idx + 1}</span>
-                  <span className="font-semibold text-gray-200">{p.name}</span>
-                  {idx === 0 && <span className="text-[10px] bg-yellow-500/20 text-yellow-300 border border-yellow-500/40 px-1.5 py-0.2 rounded font-bold">MVP</span>}
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold text-[#78716c]">#{idx + 1}</span>
+                  <span className="font-semibold text-[#f5f5f4]">{p.name}</span>
+                  {idx === 0 && <span className="text-[9px] bg-amber-950 text-amber-300 border border-amber-600/50 px-1.5 py-0.2 rounded font-bold">MVP</span>}
                 </div>
-                <div className="flex items-center gap-4 text-gray-400">
+                <div className="flex items-center gap-3 text-[#a8a29e] text-[11px]">
                   <span>💥 {p.damageDealt} Daño</span>
                   <span>☠️ {p.kills} Bajas</span>
                 </div>
@@ -73,27 +78,27 @@ export const EndGameModal: React.FC<Props> = ({ world, isHost, onRestart }) => {
             ))}
           </div>
 
-          <div className="mt-3 pt-3 border-t border-gray-800 flex justify-around text-xs font-mono text-gray-400">
-            <span>Salas: <strong className="text-gray-200">{world.room.roomIndex} / {world.room.totalRooms}</strong></span>
-            <span>Daño Total: <strong className="text-yellow-400">{world.telemetry.totalDamageDealt}</strong></span>
+          <div className="mt-2.5 pt-2 border-t border-[#292524] flex justify-around text-xs font-cinzel text-[#78716c]">
+            <span>Cámaras: <strong className="text-[#e7e5e4]">{world.room.roomIndex} / {world.room.totalRooms}</strong></span>
+            <span>Daño Total: <strong className="text-[#d97706]">{world.telemetry.totalDamageDealt}</strong></span>
           </div>
         </div>
 
-        {/* Action Button */}
+        {/* Restart Button */}
         {isHost ? (
           <button
             onClick={onRestart}
-            className={`mt-4 w-full py-3 rounded-xl font-mono font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 transition shadow-lg ${
+            className={`mt-3 w-full py-2.5 rounded font-cinzel font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition ${
               isVictory
-                ? 'bg-amber-500 hover:bg-amber-400 text-gray-950 shadow-amber-500/20'
-                : 'bg-red-600 hover:bg-red-500 text-white shadow-red-600/20'
+                ? 'bg-[#78350f] hover:bg-[#92400e] text-[#fef3c7] border border-[#b45309]'
+                : 'bg-[#991b1b] hover:bg-[#b91c1c] text-white border border-[#dc2626]'
             }`}
           >
-            <RotateCcw size={16} /> REINICIAR MAZMORRA
+            <RotateCcw size={14} /> REINTENTAR CALABOZO
           </button>
         ) : (
-          <p className="mt-4 text-xs font-mono text-gray-500 italic">
-            Esperando a que el líder inicie otra expedición...
+          <p className="mt-3 text-xs font-cinzel text-[#78716c] italic">
+            Esperando la decisión del líder de la escuadra...
           </p>
         )}
       </div>

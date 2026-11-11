@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { DirectorDialogue, RoomMutation } from '../types';
 import { speechDirector } from '../audio/speech';
-import { Volume2, VolumeX, ShieldAlert, Sparkles } from 'lucide-react';
+import { Volume2, VolumeX, Flame } from 'lucide-react';
 
 interface Props {
   dialogue: DirectorDialogue;
@@ -14,13 +14,11 @@ export const DirectorBanner: React.FC<Props> = ({ dialogue, mutation, roomIndex,
   const [displayedText, setDisplayedText] = useState('');
   const [voiceEnabled, setVoiceEnabled] = useState(true);
 
-  // Typewriter effect & speech synthesis
   useEffect(() => {
     setDisplayedText('');
     let idx = 0;
     const text = dialogue.text || '';
 
-    // Speak with AI voice
     speechDirector.speak(text);
 
     const interval = setInterval(() => {
@@ -41,56 +39,61 @@ export const DirectorBanner: React.FC<Props> = ({ dialogue, mutation, roomIndex,
   };
 
   return (
-    <div className="absolute top-3 left-1/2 -translate-x-1/2 w-[95%] max-w-4xl z-30 pointer-events-none">
-      <div className="bg-gray-900/90 backdrop-blur-md border border-red-500/40 rounded-xl p-3 shadow-2xl shadow-red-950/40 flex items-center gap-3">
-        {/* Animated AI Director Portrait */}
-        <div className="relative flex-shrink-0 w-12 h-12 bg-red-950/80 border border-red-500/60 rounded-lg flex items-center justify-center overflow-hidden">
-          <div className="w-6 h-6 rounded-full bg-red-600 animate-pulse-fast shadow-lg shadow-red-500 flex items-center justify-center">
-            <div className="w-2 h-2 rounded-full bg-white"></div>
-          </div>
-          <div className="absolute inset-0 bg-gradient-to-t from-red-500/20 to-transparent pointer-events-none"></div>
+    <div className="absolute top-3 left-1/2 -translate-x-1/2 w-[95%] max-w-3xl z-30 pointer-events-none">
+      {/* Gothic Stone Plaque */}
+      <div className="bg-[#141210]/95 border-2 border-[#44403c] rounded-lg p-3 shadow-2xl shadow-black flex items-center gap-3 relative">
+        {/* Stone corner rivets */}
+        <div className="absolute top-1 left-1 w-1.5 h-1.5 rounded-full bg-[#78716c]"></div>
+        <div className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-[#78716c]"></div>
+        <div className="absolute bottom-1 left-1 w-1.5 h-1.5 rounded-full bg-[#78716c]"></div>
+        <div className="absolute bottom-1 right-1 w-1.5 h-1.5 rounded-full bg-[#78716c]"></div>
+
+        {/* Gothic Gargoyle / Inquisitor Seal */}
+        <div className="relative flex-shrink-0 w-11 h-11 bg-[#1c1917] border border-[#57534e] rounded flex items-center justify-center">
+          <span className="text-xl">🗿</span>
+          <div className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-700 border border-black animate-pulse"></div>
         </div>
 
-        {/* Dialogue text */}
+        {/* Spoken Text */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase font-bold tracking-widest text-red-400 font-mono">
-              DIRECTOR DEL CALABOZO [IA]
+            <span className="text-[10px] uppercase font-bold tracking-widest text-[#d97706] font-cinzel">
+              GRAN MAESTRE DEL CALABOZO
             </span>
-            <span className="text-xs text-gray-500 font-mono">
-              SALA {roomIndex} / {totalRooms} {roomIndex >= totalRooms ? '👑 JEFE FINAL' : ''}
+            <span className="text-xs text-[#a8a29e] font-cinzel font-semibold">
+              • CÁMARA {roomIndex} / {totalRooms} {roomIndex >= totalRooms ? '⚔️ JEFE' : ''}
             </span>
           </div>
-          <p className="text-sm md:text-base font-semibold text-gray-100 font-sans tracking-wide leading-tight mt-0.5 min-h-[1.5rem]">
+          <p className="text-xs md:text-sm text-[#f5f5f4] font-serif italic tracking-normal leading-tight mt-0.5 min-h-[1.4rem]">
             "{displayedText}"
-            <span className="animate-pulse text-red-400">|</span>
+            <span className="animate-pulse text-[#b45309]">|</span>
           </p>
         </div>
 
-        {/* Mutation Pills & Voice Toggle */}
+        {/* Mutation Runes & Sound Toggle */}
         <div className="flex items-center gap-2 flex-shrink-0 pointer-events-auto">
           {mutation.frictionMultiplier < 0.3 && (
-            <span className="hidden sm:inline-flex items-center gap-1 text-[11px] bg-cyan-950 border border-cyan-500/50 text-cyan-300 px-2 py-0.5 rounded-full font-mono">
-              ❄️ Hielo (-80% Fricción)
+            <span className="hidden sm:inline-flex items-center text-[10px] bg-[#1c1917] border border-[#44403c] text-sky-300 px-2 py-0.5 rounded font-cinzel">
+              ❄ Hielo Resbaladizo
             </span>
           )}
           {mutation.bulletBouncesBonus > 0 && (
-            <span className="hidden sm:inline-flex items-center gap-1 text-[11px] bg-yellow-950 border border-yellow-500/50 text-yellow-300 px-2 py-0.5 rounded-full font-mono">
+            <span className="hidden sm:inline-flex items-center text-[10px] bg-[#1c1917] border border-[#44403c] text-amber-300 px-2 py-0.5 rounded font-cinzel">
               ⚡ Rebotes +{mutation.bulletBouncesBonus}
             </span>
           )}
           {mutation.lowVisibility && (
-            <span className="hidden sm:inline-flex items-center gap-1 text-[11px] bg-purple-950 border border-purple-500/50 text-purple-300 px-2 py-0.5 rounded-full font-mono">
-              👁️ Niebla Oscura
+            <span className="hidden sm:inline-flex items-center text-[10px] bg-[#1c1917] border border-[#44403c] text-stone-300 px-2 py-0.5 rounded font-cinzel">
+              👁 Niebla Oscura
             </span>
           )}
 
           <button
             onClick={toggleVoice}
-            className="p-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-300 hover:text-white hover:bg-gray-700 transition"
-            title={voiceEnabled ? 'Silenciar voz de la IA' : 'Activar voz de la IA'}
+            className="p-1.5 rounded bg-[#1c1917] border border-[#44403c] text-[#a8a29e] hover:text-[#f5f5f4] hover:border-[#78716c] transition"
+            title={voiceEnabled ? 'Silenciar voz' : 'Activar voz'}
           >
-            {voiceEnabled ? <Volume2 size={16} /> : <VolumeX size={16} className="text-red-400" />}
+            {voiceEnabled ? <Volume2 size={15} /> : <VolumeX size={15} className="text-red-500" />}
           </button>
         </div>
       </div>

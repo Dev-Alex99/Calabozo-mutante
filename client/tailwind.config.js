@@ -3,27 +3,30 @@ export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
+      fontFamily: {
+        cinzel: ['Cinzel', 'serif'],
+        medieval: ['MedievalSharp', 'cursive'],
+        sans: ['Inter', 'sans-serif'],
+      },
       colors: {
-        dungeon: {
-          darkest: '#0b0c10',
-          dark: '#1f2833',
-          stone: '#374151',
-          blood: '#e11d48',
-          gold: '#f59e0b',
-          poison: '#10b981',
-          arcane: '#8b5cf6',
-          cyan: '#06b6d4',
+        grimoire: {
+          bg: '#0c0a09',        // deep dark stone
+          stone: '#1c1917',     // chiseled slate
+          stoneLight: '#292524',
+          border: '#44403c',    // weathered iron
+          gold: '#d97706',      // tarnished gold
+          goldBright: '#f59e0b',
+          parchment: '#fef3c7', // aged parchment
+          blood: '#991b1b',     // dried blood
+          bloodDark: '#450a0a',
+          emerald: '#15803d',
+          arcane: '#6b21a8',
         },
       },
-      animation: {
-        'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-        'wiggle': 'wiggle 0.3s ease-in-out infinite',
-      },
-      keyframes: {
-        wiggle: {
-          '0%, 100%': { transform: 'rotate(-3deg)' },
-          '50%': { transform: 'rotate(3deg)' },
-        },
+      boxShadow: {
+        'torch': '0 0 25px rgba(217, 119, 6, 0.25)',
+        'blood': '0 0 25px rgba(153, 27, 27, 0.35)',
+        'iron': '0 4px 20px rgba(0, 0, 0, 0.8)',
       },
     },
   },
