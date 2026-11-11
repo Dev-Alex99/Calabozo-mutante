@@ -78,11 +78,11 @@ export class SpriteModels {
     ctx.rotate(player.angle);
 
     if (player.classType === 'GUERRERO') {
-      this.drawGuerrero(ctx, walkBob, walkTilt, time, isMoving);
+      this.drawGuerrero(ctx, player, walkBob, walkTilt, time, isMoving);
     } else if (player.classType === 'CAZADOR') {
-      this.drawCazador(ctx, walkBob, walkTilt, time, isMoving);
+      this.drawCazador(ctx, player, walkBob, walkTilt, time, isMoving);
     } else {
-      this.drawMago(ctx, walkBob, walkTilt, time, isMoving);
+      this.drawMago(ctx, player, walkBob, walkTilt, time, isMoving);
     }
 
     ctx.restore();
@@ -107,6 +107,7 @@ export class SpriteModels {
 
   private static drawGuerrero(
     ctx: CanvasRenderingContext2D,
+    player: PlayerEntity,
     bob: number,
     tilt: number,
     time: number,
@@ -115,15 +116,29 @@ export class SpriteModels {
     ctx.translate(0, bob);
     ctx.rotate(tilt);
 
-    // Cape
+    const isAttacking = Date.now() - player.lastAttackAt < 160;
+    const attackProg = isAttacking ? (Date.now() - player.lastAttackAt) / 160 : 1;
+
+    // Cape with centrifugal wave momentum
+    const capeFlutter = isAttacking
+      ? Math.sin(attackProg * Math.PI) * 9
+      : isMoving
+      ? Math.sin(time * 12) * 4
+      : 0;
+
     ctx.fillStyle = '#7f1d1d';
     ctx.beginPath();
     ctx.moveTo(-10, -6);
-    ctx.lineTo(-24 - (isMoving ? 4 : 0), -12 + (isMoving ? Math.sin(time * 12) * 3 : 0));
-    ctx.lineTo(-24 - (isMoving ? 4 : 0), 12 + (isMoving ? Math.cos(time * 12) * 3 : 0));
+    ctx.lineTo(-26 - (isMoving ? 4 : 0), -14 + capeFlutter);
+    ctx.lineTo(-26 - (isMoving ? 4 : 0), 14 + capeFlutter * 0.5);
     ctx.lineTo(-10, 6);
     ctx.closePath();
     ctx.fill();
+
+    // Gold trim on cape
+    ctx.strokeStyle = '#d97706';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
 
     // Plate Torso
     ctx.fillStyle = '#44403c';
@@ -141,7 +156,7 @@ export class SpriteModels {
     ctx.fillStyle = '#d97706';
     ctx.fillRect(0, -3, 5, 6);
 
-    // Pauldrons (Shoulder Armor)
+    // Pauldrons (Shoulder Armor with steel bevel)
     ctx.fillStyle = '#57534e';
     ctx.beginPath();
     ctx.arc(-2, -12, 6, 0, Math.PI * 2);
@@ -166,9 +181,14 @@ export class SpriteModels {
     ctx.fillStyle = '#ef4444';
     ctx.fillRect(7, -2, 2, 4);
 
-    // Heavy Claymore Zweihänder Sword (Extending forward)
+    // Heavy Claymore Zweihänder Sword with dynamic attack swing
     ctx.save();
+    const swingAngle = isAttacking
+      ? -Math.PI * 0.45 + attackProg * Math.PI * 0.95
+      : 0;
+
     ctx.translate(14, 8);
+    ctx.rotate(swingAngle);
 
     // Steel Crossguard
     ctx.fillStyle = '#b45309';
@@ -205,10 +225,36 @@ export class SpriteModels {
     ctx.stroke();
 
     ctx.restore();
+
+    // Slashing Blade Arc Trail (Silver-Gold crescent motion ribbon)
+    if (isAttacking) {
+      ctx.save();
+      const slashGrad = ctx.createRadialGradient(0, 0, 16, 0, 0, 44);
+      slashGrad.addColorStop(0, 'rgba(254, 240, 138, 0)');
+      slashGrad.addColorStop(0.65, 'rgba(245, 158, 11, 0.45)');
+      slashGrad.addColorStop(1, 'rgba(255, 255, 255, 0.9)');
+
+      ctx.fillStyle = slashGrad;
+      ctx.beginPath();
+      ctx.arc(0, 0, 44, -Math.PI * 0.45, -Math.PI * 0.45 + attackProg * Math.PI * 0.95);
+      ctx.arc(0, 0, 18, -Math.PI * 0.45 + attackProg * Math.PI * 0.95, -Math.PI * 0.45, true);
+      ctx.closePath();
+      ctx.fill();
+
+      // Sharp white cutting edge
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, 44, -Math.PI * 0.45, -Math.PI * 0.45 + attackProg * Math.PI * 0.95);
+      ctx.stroke();
+
+      ctx.restore();
+    }
   }
 
   private static drawCazador(
     ctx: CanvasRenderingContext2D,
+    player: PlayerEntity,
     bob: number,
     tilt: number,
     time: number,
@@ -216,6 +262,11 @@ export class SpriteModels {
   ) {
     ctx.translate(0, bob);
     ctx.rotate(tilt);
+
+    const isShooting = Date.now() - player.lastAttackAt < 140;
+    const shootProg = isShooting ? (Date.now() - player.lastAttackAt) / 140 : 1;
+    const recoilX = isShooting ? -Math.sin(shootProg * Math.PI) * 4 : 0;
+    const twang = isShooting ? Math.sin((Date.now() - player.lastAttackAt) * 0.15) * 3 : 0;
 
     // Forest Ranger Quiver (On Back)
     ctx.fillStyle = '#78350f';
@@ -254,9 +305,9 @@ export class SpriteModels {
     ctx.fillRect(5, -3, 2, 2);
     ctx.fillRect(5, 2, 2, 2);
 
-    // Heavy Hunting Crossbow
+    // Heavy Hunting Crossbow with Recoil
     ctx.save();
-    ctx.translate(12, 4);
+    ctx.translate(12 + recoilX, 4);
 
     // Wood Tiller / Stock
     ctx.fillStyle = '#78350f';
@@ -270,35 +321,44 @@ export class SpriteModels {
     ctx.quadraticCurveTo(14, 0, 10, 14);
     ctx.stroke();
 
-    // Taut Bowstring
+    // Vibrating Bowstring
     ctx.strokeStyle = '#d6d3d1';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(10, -14);
-    ctx.lineTo(2, 0);
+    ctx.lineTo(2 + twang, 0);
     ctx.lineTo(10, 14);
     ctx.stroke();
 
-    // Loaded Steel Broadhead Bolt
-    ctx.strokeStyle = '#0284c7';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(2, 0);
-    ctx.lineTo(16, 0);
-    ctx.stroke();
-    // Arrow tip
-    ctx.fillStyle = '#f1f5f9';
-    ctx.beginPath();
-    ctx.moveTo(16, -3);
-    ctx.lineTo(20, 0);
-    ctx.lineTo(16, 3);
-    ctx.fill();
+    // Loaded Steel Broadhead Bolt (only when not in middle of shoot recoil)
+    if (!isShooting || shootProg > 0.6) {
+      ctx.strokeStyle = '#0284c7';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(2, 0);
+      ctx.lineTo(16, 0);
+      ctx.stroke();
+      // Arrow tip
+      ctx.fillStyle = '#f1f5f9';
+      ctx.beginPath();
+      ctx.moveTo(16, -3);
+      ctx.lineTo(20, 0);
+      ctx.lineTo(16, 3);
+      ctx.fill();
+    } else {
+      // Muzzle spark star
+      ctx.fillStyle = '#facc15';
+      ctx.beginPath();
+      ctx.arc(20, 0, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     ctx.restore();
   }
 
   private static drawMago(
     ctx: CanvasRenderingContext2D,
+    player: PlayerEntity,
     bob: number,
     tilt: number,
     time: number,
@@ -306,6 +366,29 @@ export class SpriteModels {
   ) {
     ctx.translate(0, bob);
     ctx.rotate(tilt);
+
+    const isCasting = Date.now() - player.lastAttackAt < 220;
+
+    // Ground Magic Transmutation Circle during spellcast
+    if (isCasting) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(234, 88, 12, 0.55)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, 26, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Rotating inner runes
+      ctx.strokeStyle = 'rgba(250, 204, 21, 0.6)';
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = (i * Math.PI) / 3 + time * 3;
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(a) * 26, Math.sin(a) * 26);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
 
     // Flowing Sorcerer Robes
     ctx.fillStyle = '#3b0764';
@@ -359,14 +442,25 @@ export class SpriteModels {
     ctx.stroke();
 
     // Pulsing Fiery Crystal Core
-    const pulse = Math.sin(time * 6) * 1.5;
+    const pulse = isCasting ? 3.5 : Math.sin(time * 6) * 1.5;
     ctx.fillStyle = '#ea580c';
     ctx.shadowColor = '#ea580c';
-    ctx.shadowBlur = 10;
+    ctx.shadowBlur = 12;
     ctx.beginPath();
     ctx.arc(19, 2, 4 + pulse, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
+
+    // 3 Orbiting Arcane Rune Orbs
+    for (let i = 0; i < 3; i++) {
+      const orbAngle = time * 5 + i * ((Math.PI * 2) / 3);
+      const ox = 19 + Math.cos(orbAngle) * 9;
+      const oy = 2 + Math.sin(orbAngle) * 5;
+      ctx.fillStyle = i === 0 ? '#fde047' : i === 1 ? '#ea580c' : '#ef4444';
+      ctx.beginPath();
+      ctx.arc(ox, oy, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     ctx.restore();
 
@@ -374,7 +468,7 @@ export class SpriteModels {
     const bookFloat = Math.sin(time * 4) * 3;
     ctx.save();
     ctx.translate(-8, -14 + bookFloat);
-    ctx.rotate(Math.sin(time * 3) * 0.15);
+    ctx.rotate(isCasting ? -0.3 : Math.sin(time * 3) * 0.15);
 
     // Leather Tome Cover
     ctx.fillStyle = '#7f1d1d';
@@ -382,9 +476,16 @@ export class SpriteModels {
     // Gold Rune on Cover
     ctx.fillStyle = '#d97706';
     ctx.fillRect(-2, -4, 4, 8);
-    // Parchment Pages
+    // Parchment Pages (fanning open when casting)
     ctx.fillStyle = '#fef3c7';
-    ctx.fillRect(-4, -6, 8, 12);
+    if (isCasting) {
+      ctx.fillRect(-8, -9, 16, 18);
+      // Floating arcane ember rune
+      ctx.fillStyle = '#f59e0b';
+      ctx.fillRect(-1, -6, 2, 4);
+    } else {
+      ctx.fillRect(-4, -6, 8, 12);
+    }
 
     ctx.restore();
   }
@@ -499,8 +600,16 @@ export class SpriteModels {
 
   /**
    * Viscous, translucent acidic Slime with a dissolved skeleton skull inside!
+   * Enhanced with physics-based squash & stretch tied to AI hopping.
    */
   private static drawSlime(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
+    const isHopping = enemy.aiState === 'CHARGING';
+    const hopScaleX = isHopping ? 0.78 : 1.0 + Math.sin(time * 6) * 0.08;
+    const hopScaleY = isHopping ? 1.28 : 1.0 - Math.sin(time * 6) * 0.08;
+
+    ctx.save();
+    ctx.scale(hopScaleX, hopScaleY);
+
     const wobbleX = Math.sin(time * 8 + enemy.x) * 3.5;
     const wobbleY = Math.cos(time * 8 + enemy.y) * 3.5;
 
@@ -522,9 +631,17 @@ export class SpriteModels {
     ctx.ellipse(0, -2, enemy.radius * 0.75 + wobbleX * 0.5, enemy.radius * 0.7 - wobbleY * 0.5, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Dissolved Skeleton Skull floating inside!
+    // Acid bubbles on surface
+    ctx.fillStyle = '#86efac';
+    ctx.beginPath();
+    ctx.arc(-wobbleX * 0.5, -enemy.radius * 0.6, 2, 0, Math.PI * 2);
+    ctx.arc(wobbleX * 0.7, -enemy.radius * 0.4, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Dissolved Skeleton Skull floating inside with buoyant lag!
     ctx.save();
-    ctx.translate(wobbleX * 0.4, -wobbleY * 0.3);
+    ctx.translate(wobbleX * 0.35, -wobbleY * 0.3 - (isHopping ? 3 : 0));
+    ctx.rotate(-wobbleX * 0.05);
     ctx.fillStyle = '#e2e8f0';
     ctx.beginPath();
     ctx.arc(0, -1, 7, 0, Math.PI * 2);
@@ -549,14 +666,17 @@ export class SpriteModels {
     ctx.fillRect(-7, -8, 2, 3);
     ctx.fillRect(5, -8, 2, 3);
 
+    ctx.restore();
+
     this.drawGothicHealthBar(ctx, 0, -enemy.radius - 8, 34, 4, enemy.currentHp, enemy.maxHp);
   }
 
   /**
    * Anatomical bone Esqueleto holding longbow.
+   * Bowstring flexes back taut when charging an attack!
    */
   private static drawEsqueleto(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
-    const angleToMotion = Math.atan2(enemy.vy, enemy.vx) || 0;
+    const isCharging = enemy.aiState === 'CHARGING';
     const rattle = Math.sin(time * 10) * 1.5;
 
     // Ground Shadow
@@ -574,11 +694,11 @@ export class SpriteModels {
     ctx.closePath();
     ctx.fill();
 
-    // Spine & Ribcage
+    // Spine & Ribcage (arched back if charging)
     ctx.strokeStyle = '#e2e8f0';
     ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.moveTo(0, -6);
+    ctx.moveTo(isCharging ? -3 : 0, -6);
     ctx.lineTo(0, 8); // Spine
     ctx.stroke();
 
@@ -596,18 +716,18 @@ export class SpriteModels {
     // Skull
     ctx.fillStyle = '#f1f5f9';
     ctx.beginPath();
-    ctx.arc(0, -10 + rattle * 0.5, 7.5, 0, Math.PI * 2);
+    ctx.arc(isCharging ? -2 : 0, -10 + rattle * 0.5, 7.5, 0, Math.PI * 2);
     ctx.fill();
 
     // Jagged Teeth / Jaw
     ctx.fillStyle = '#cbd5e1';
-    ctx.fillRect(-3, -4 + rattle * 0.5, 6, 3);
+    ctx.fillRect(isCharging ? -5 : -3, -4 + rattle * 0.5, 6, 3);
 
-    // Dark Hollow Eye Sockets
-    ctx.fillStyle = '#0f172a';
+    // Hollow Eye Sockets (ignite with burning crimson embers if charging!)
+    ctx.fillStyle = isCharging ? '#ef4444' : '#0f172a';
     ctx.beginPath();
-    ctx.arc(-2.5, -10 + rattle * 0.5, 2, 0, Math.PI * 2);
-    ctx.arc(2.5, -10 + rattle * 0.5, 2, 0, Math.PI * 2);
+    ctx.arc((isCharging ? -2 : 0) - 2.5, -10 + rattle * 0.5, 2, 0, Math.PI * 2);
+    ctx.arc((isCharging ? -2 : 0) + 2.5, -10 + rattle * 0.5, 2, 0, Math.PI * 2);
     ctx.fill();
 
     // Ancient Bone Longbow
@@ -616,14 +736,28 @@ export class SpriteModels {
     ctx.beginPath();
     ctx.arc(10, 0, 12, -Math.PI / 2, Math.PI / 2);
     ctx.stroke();
-    // Bowstring
+
+    // Bowstring (pulled back taut towards cheekbone if charging)
+    const pullX = isCharging ? -4 : 3;
     ctx.strokeStyle = '#94a3b8';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(10, -12);
-    ctx.lineTo(3, 0);
+    ctx.lineTo(pullX, 0);
     ctx.lineTo(10, 12);
     ctx.stroke();
+
+    // Loaded Bone Arrow if charging
+    if (isCharging) {
+      ctx.fillStyle = '#e2e8f0';
+      ctx.fillRect(pullX, -1, 14, 2);
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.moveTo(pullX + 14, -3);
+      ctx.lineTo(pullX + 18, 0);
+      ctx.lineTo(pullX + 14, 3);
+      ctx.fill();
+    }
 
     this.drawGothicHealthBar(ctx, 0, -enemy.radius - 12, 34, 4, enemy.currentHp, enemy.maxHp);
   }
@@ -993,34 +1127,387 @@ export class SpriteModels {
   /**
    * Wall Torch with flickering flame and warm ambient light.
    */
+  /**
+   * Wall Torch with multi-layered flickering flame and ornate serpent iron sconce.
+   */
   public static drawTorch(ctx: CanvasRenderingContext2D, x: number, y: number, time: number) {
     ctx.save();
     ctx.translate(x, y);
 
-    // Iron Sconce Bracket
-    ctx.strokeStyle = '#292524';
-    ctx.lineWidth = 3;
+    // Ornate Coiled Serpent Iron Sconce
+    ctx.strokeStyle = '#1c1917';
+    ctx.lineWidth = 3.5;
     ctx.beginPath();
-    ctx.moveTo(0, 8);
-    ctx.lineTo(0, 0);
-    ctx.lineTo(6, -4);
+    ctx.moveTo(0, 14);
+    ctx.quadraticCurveTo(-4, 6, 0, 0);
+    ctx.lineTo(8, -6);
     ctx.stroke();
 
-    // Wood Torch Head
-    ctx.fillStyle = '#451a03';
-    ctx.fillRect(-3, -8, 6, 8);
+    // Rivet mounting plate
+    ctx.fillStyle = '#44403c';
+    ctx.fillRect(-3, 6, 6, 8);
+    ctx.fillStyle = '#78716c';
+    ctx.beginPath();
+    ctx.arc(0, 10, 1.5, 0, Math.PI * 2);
+    ctx.fill();
 
-    // Flickering Flame
-    const flick = Math.sin(time * 16 + x) * 2;
+    // Blackened Iron Torch Basket
+    ctx.fillStyle = '#292524';
+    ctx.beginPath();
+    ctx.moveTo(4, -5);
+    ctx.lineTo(12, -5);
+    ctx.lineTo(10, -11);
+    ctx.lineTo(6, -11);
+    ctx.closePath();
+    ctx.fill();
+
+    // Burning Coals inside Basket
+    ctx.fillStyle = '#7f1d1d';
+    ctx.fillRect(6, -10, 4, 3);
+
+    // Multi-layered Flickering Flame
+    const flick1 = Math.sin(time * 18 + x) * 2;
+    const flick2 = Math.cos(time * 24 + y) * 1.5;
+
+    // 1. Outer Flame Mantle (Fiery Orange with heat tongue)
     ctx.fillStyle = '#ea580c';
     ctx.beginPath();
-    ctx.arc(0, -10 + flick * 0.5, 5 + flick * 0.5, 0, Math.PI * 2);
+    ctx.moveTo(4, -10);
+    ctx.quadraticCurveTo(2 + flick1, -18, 8 + flick2, -22);
+    ctx.quadraticCurveTo(14 - flick1, -17, 12, -10);
+    ctx.closePath();
     ctx.fill();
 
-    ctx.fillStyle = '#facc15';
+    // 2. Mid Flame (Brilliant Gold)
+    ctx.fillStyle = '#f59e0b';
     ctx.beginPath();
-    ctx.arc(0, -11 + flick * 0.5, 3, 0, Math.PI * 2);
+    ctx.moveTo(5, -10);
+    ctx.quadraticCurveTo(4 + flick1 * 0.7, -15, 8 + flick2 * 0.5, -18);
+    ctx.quadraticCurveTo(12 - flick1 * 0.7, -15, 11, -10);
+    ctx.closePath();
     ctx.fill();
+
+    // 3. Hot Core (Blinding Yellow-White)
+    ctx.fillStyle = '#fef08a';
+    ctx.beginPath();
+    ctx.arc(8 + flick2 * 0.3, -12, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  /**
+   * Majestic Gothic Stone Pillar with fluting, iron bands, gargoyle capital, and cast floor shadow.
+   */
+  public static drawGothicPillar(ctx: CanvasRenderingContext2D, x: number, y: number, time: number) {
+    ctx.save();
+    ctx.translate(x, y);
+
+    // Cast soft diagonal ground shadow (southeast)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    ctx.beginPath();
+    ctx.ellipse(14, 18, 30, 14, Math.PI / 6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Stepped Chiseled Plinth (Base)
+    ctx.fillStyle = '#1c1917';
+    ctx.fillRect(-22, 4, 44, 16);
+    ctx.strokeStyle = '#44403c';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(-22, 4, 44, 16);
+
+    ctx.fillStyle = '#292524';
+    ctx.fillRect(-18, -4, 36, 8);
+    ctx.strokeRect(-18, -4, 36, 8);
+
+    // Fluted Column Shaft
+    ctx.fillStyle = '#1c1917';
+    ctx.fillRect(-14, -48, 28, 44);
+
+    // Fluting ridges (Vertical chisel lines)
+    ctx.strokeStyle = '#44403c';
+    ctx.lineWidth = 1.5;
+    for (let lx = -10; lx <= 10; lx += 5) {
+      ctx.beginPath();
+      ctx.moveTo(lx, -48);
+      ctx.lineTo(lx, 0);
+      ctx.stroke();
+    }
+
+    // Iron Band around center column with rivets
+    ctx.fillStyle = '#57534e';
+    ctx.fillRect(-15, -28, 30, 5);
+    ctx.fillStyle = '#d97706';
+    ctx.beginPath();
+    ctx.arc(-8, -25.5, 1.2, 0, Math.PI * 2);
+    ctx.arc(0, -25.5, 1.2, 0, Math.PI * 2);
+    ctx.arc(8, -25.5, 1.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Ornate Carved Capital at top
+    ctx.fillStyle = '#292524';
+    ctx.beginPath();
+    ctx.moveTo(-20, -48);
+    ctx.lineTo(20, -48);
+    ctx.lineTo(16, -58);
+    ctx.lineTo(-16, -58);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#57534e';
+    ctx.stroke();
+
+    // Gargoyle stone crest on capital
+    ctx.fillStyle = '#78716c';
+    ctx.beginPath();
+    ctx.arc(0, -53, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  /**
+   * Ancient Gothic Ritual Circle engraved into stone with runic symbols and glowing center crest.
+   */
+  public static drawRitualCircle(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    radius: number,
+    time: number,
+    theme: 'ice' | 'mud' | 'fire' | 'gold'
+  ) {
+    ctx.save();
+    ctx.translate(x, y);
+
+    const mainColor =
+      theme === 'ice'
+        ? '#38bdf8'
+        : theme === 'mud'
+        ? '#22c55e'
+        : theme === 'fire'
+        ? '#ea580c'
+        : '#d97706';
+
+    const glowColor =
+      theme === 'ice'
+        ? 'rgba(56, 189, 248, 0.16)'
+        : theme === 'mud'
+        ? 'rgba(34, 197, 94, 0.14)'
+        : theme === 'fire'
+        ? 'rgba(234, 88, 12, 0.2)'
+        : 'rgba(217, 119, 6, 0.16)';
+
+    // Ambient runic floor glow
+    ctx.fillStyle = glowColor;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Outer Concentric Ring
+    ctx.strokeStyle = mainColor;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Inner Secondary Ring
+    ctx.strokeStyle = mainColor;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.85, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Octagram (8-pointed geometric star)
+    ctx.lineWidth = 1.2;
+    const rOuter = radius * 0.85;
+    const rInner = radius * 0.42;
+    ctx.beginPath();
+    for (let i = 0; i < 16; i++) {
+      const a = (i * Math.PI) / 8;
+      const r = i % 2 === 0 ? rOuter : rInner;
+      const px = Math.cos(a) * r;
+      const py = Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.stroke();
+
+    // Concentric Center Medallion
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.32, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 8 Engraved Arcane Runes in Ring
+    ctx.fillStyle = mainColor;
+    ctx.font = 'bold 12px "Cinzel", serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const runes = ['ᚦ', 'ᚱ', 'ᚲ', 'ᚷ', 'ᚹ', 'ᚺ', 'ᛃ', 'ᛈ'];
+    for (let i = 0; i < 8; i++) {
+      const a = (i * Math.PI) / 4 + Math.PI / 8;
+      const rx = Math.cos(a) * (radius * 0.92);
+      const ry = Math.sin(a) * (radius * 0.92);
+      ctx.fillText(runes[i], rx, ry);
+    }
+
+    // Center Demon Eye / Sol Invictus crest
+    ctx.fillStyle = mainColor;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radius * 0.16, radius * 0.1, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#0c0a09';
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.06, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  /**
+   * Spun spiderweb in dungeon corners.
+   */
+  public static drawWallCobwebs(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    size: number,
+    corner: 'TL' | 'TR' | 'BL' | 'BR'
+  ) {
+    ctx.save();
+    ctx.translate(x, y);
+
+    const sx = corner === 'TR' || corner === 'BR' ? -1 : 1;
+    const sy = corner === 'BL' || corner === 'BR' ? -1 : 1;
+    ctx.scale(sx, sy);
+
+    ctx.strokeStyle = 'rgba(214, 211, 209, 0.2)';
+    ctx.lineWidth = 1;
+
+    // Radial spines
+    for (let a = 0; a <= Math.PI / 2; a += Math.PI / 8) {
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(a) * size, Math.sin(a) * size);
+      ctx.stroke();
+    }
+
+    // Concentric web arches
+    for (let r = size * 0.25; r <= size; r += size * 0.25) {
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI / 2);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * Weathered skull and shattered femur bone pile.
+   */
+  public static drawBonePile(ctx: CanvasRenderingContext2D, x: number, y: number) {
+    ctx.save();
+    ctx.translate(x, y);
+
+    // Weathered skull
+    ctx.fillStyle = '#e2e8f0';
+    ctx.beginPath();
+    ctx.arc(0, 0, 5, 0, Math.PI * 2);
+    ctx.fill();
+    // Eye sockets
+    ctx.fillStyle = '#1c1917';
+    ctx.beginPath();
+    ctx.arc(-1.5, -0.5, 1.2, 0, Math.PI * 2);
+    ctx.arc(1.5, -0.5, 1.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Shattered Femur Bones
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(-9, 4);
+    ctx.lineTo(7, -3);
+    ctx.moveTo(-6, -4);
+    ctx.lineTo(8, 5);
+    ctx.stroke();
+
+    // Ribcage curved remnant
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(4, 3, 5, -Math.PI / 2, Math.PI / 3);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  /**
+   * Hanging iron chain dangling from dungeon wall with pendular sway.
+   */
+  public static drawWallChain(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    links: number,
+    time: number
+  ) {
+    ctx.save();
+    ctx.translate(x, y);
+
+    const sway = Math.sin(time * 2.2 + x) * 1.5;
+
+    // Iron Wall Staple
+    ctx.fillStyle = '#44403c';
+    ctx.fillRect(-4, 0, 8, 4);
+
+    // Interlocking Chain Links
+    for (let i = 0; i < links; i++) {
+      const ly = 4 + i * 7;
+      const lx = (i / links) * sway;
+
+      ctx.strokeStyle = '#57534e';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.ellipse(lx, ly, 2.5, 4.5, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Heavy Iron Shackle Collar at end
+    const endY = 4 + links * 7;
+    ctx.strokeStyle = '#292524';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(sway, endY + 4, 5, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  /**
+   * Heavy iron floor drain with dark vertical bars.
+   */
+  public static drawFloorDrain(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+    ctx.save();
+    ctx.translate(x, y);
+
+    // Dark square pit
+    ctx.fillStyle = '#090807';
+    ctx.fillRect(-size / 2, -size / 2, size, size);
+
+    // Iron border rim
+    ctx.strokeStyle = '#292524';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(-size / 2, -size / 2, size, size);
+
+    // Vertical Iron Grating Bars
+    ctx.strokeStyle = '#57534e';
+    ctx.lineWidth = 1.5;
+    for (let bx = -size / 2 + 5; bx < size / 2; bx += 6) {
+      ctx.beginPath();
+      ctx.moveTo(bx, -size / 2 + 2);
+      ctx.lineTo(bx, size / 2 - 2);
+      ctx.stroke();
+    }
 
     ctx.restore();
   }

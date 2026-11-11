@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { socket } from './socket';
-import { GameWorldState, PlayerClass, CLASS_CONFIGS } from './types';
+import { GameWorldState, PlayerClass, CLASS_CONFIGS, EnemyEntity } from './types';
 import { GameRenderer } from './engine/Renderer';
 import { LobbyView } from './components/LobbyView';
 import { DirectorBanner } from './components/DirectorBanner';
@@ -22,6 +22,7 @@ export const App: React.FC = () => {
   const prevHpRef = useRef<number | null>(null);
   const prevClearedRef = useRef<boolean>(false);
   const prevPhaseRef = useRef<string>('');
+  const prevEnemiesRef = useRef<EnemyEntity[]>([]);
 
   // Input states
   const keysDown = useRef<Record<string, boolean>>({});
@@ -60,6 +61,7 @@ export const App: React.FC = () => {
             rendererRef.current.addScreenShake(7, 0.25);
             rendererRef.current.textManager.spawn(`-${diff}`, player.x, player.y - 20, '#ef4444');
             rendererRef.current.particleSystem.emitBlood(player.x, player.y, '#dc2626', 10);
+            rendererRef.current.addBloodDecal(player.x, player.y, '#7f1d1d');
           } else if (player.currentHp > prevHpRef.current) {
             const diff = player.currentHp - prevHpRef.current;
             sfx.playHeal();
@@ -69,6 +71,31 @@ export const App: React.FC = () => {
         }
         prevHpRef.current = player.currentHp;
       }
+
+      // Enemy hit reactions & battlefield death decals
+      if (prevEnemiesRef.current && prevEnemiesRef.current.length > 0) {
+        for (const prevE of prevEnemiesRef.current) {
+          const currentE = updated.enemies.find(e => e.id === prevE.id);
+          if (!currentE) {
+            // Monster defeated!
+            sfx.playEnemyDeath();
+            const decalColor = prevE.type === 'SLIME' ? '#14532d' : '#450a0a';
+            rendererRef.current.addBloodDecal(prevE.x, prevE.y, decalColor);
+            if (prevE.type === 'SLIME') {
+              rendererRef.current.particleSystem.emitAcidSpurt(prevE.x, prevE.y, 14);
+            } else {
+              rendererRef.current.particleSystem.emitBlood(prevE.x, prevE.y, '#991b1b', 14);
+            }
+          } else if (currentE.currentHp < prevE.currentHp) {
+            // Monster struck
+            const diff = prevE.currentHp - currentE.currentHp;
+            rendererRef.current.textManager.spawn(`${diff}`, currentE.x, currentE.y - 14, '#facc15');
+            const sparkColor = currentE.type === 'SLIME' ? '#22c55e' : '#dc2626';
+            rendererRef.current.particleSystem.emitBlood(currentE.x, currentE.y, sparkColor, 6);
+          }
+        }
+      }
+      prevEnemiesRef.current = updated.enemies;
 
       // Room clear sound
       if (updated.room.isCleared && !prevClearedRef.current) {
