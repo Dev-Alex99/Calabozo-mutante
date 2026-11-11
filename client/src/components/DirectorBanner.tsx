@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { DirectorDialogue, RoomMutation } from '../types';
+import { DirectorDialogue, RoomMutation, RoomEncounterType } from '../types';
 import { speechDirector } from '../audio/speech';
 import { Volume2, VolumeX, Flame } from 'lucide-react';
 
@@ -8,9 +8,18 @@ interface Props {
   mutation: RoomMutation;
   roomIndex: number;
   totalRooms: number;
+  encounterType?: RoomEncounterType;
+  directorAnger?: number;
 }
 
-export const DirectorBanner: React.FC<Props> = ({ dialogue, mutation, roomIndex, totalRooms }) => {
+export const DirectorBanner: React.FC<Props> = ({
+  dialogue,
+  mutation,
+  roomIndex,
+  totalRooms,
+  encounterType = 'STANDARD',
+  directorAnger = 0,
+}) => {
   const [displayedText, setDisplayedText] = useState('');
   const [voiceEnabled, setVoiceEnabled] = useState(true);
 
@@ -28,7 +37,7 @@ export const DirectorBanner: React.FC<Props> = ({ dialogue, mutation, roomIndex,
       } else {
         clearInterval(interval);
       }
-    }, 22);
+    }, 20);
 
     return () => clearInterval(interval);
   }, [dialogue.text]);
@@ -39,10 +48,8 @@ export const DirectorBanner: React.FC<Props> = ({ dialogue, mutation, roomIndex,
   };
 
   return (
-    <div className="absolute top-3 left-1/2 -translate-x-1/2 w-[95%] max-w-3xl z-30 pointer-events-none">
-      {/* Gothic Stone Plaque */}
+    <div className="absolute top-3 left-1/2 -translate-x-1/2 w-[96%] max-w-3xl z-30 pointer-events-none">
       <div className="bg-[#141210]/95 border-2 border-[#44403c] rounded-lg p-3 shadow-2xl shadow-black flex items-center gap-3 relative">
-        {/* Stone corner rivets */}
         <div className="absolute top-1 left-1 w-1.5 h-1.5 rounded-full bg-[#78716c]"></div>
         <div className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-[#78716c]"></div>
         <div className="absolute bottom-1 left-1 w-1.5 h-1.5 rounded-full bg-[#78716c]"></div>
@@ -50,41 +57,72 @@ export const DirectorBanner: React.FC<Props> = ({ dialogue, mutation, roomIndex,
 
         {/* Gothic Gargoyle / Inquisitor Seal */}
         <div className="relative flex-shrink-0 w-11 h-11 bg-[#1c1917] border border-[#57534e] rounded flex items-center justify-center">
-          <span className="text-xl">🗿</span>
+          <span className="text-xl">{encounterType === 'BOSS' ? '👹' : encounterType === 'ELITE' ? '💀' : '🗿'}</span>
           <div className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-700 border border-black animate-pulse"></div>
         </div>
 
-        {/* Spoken Text */}
+        {/* Spoken Text & Room Info */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[10px] uppercase font-bold tracking-widest text-[#d97706] font-cinzel">
               GRAN MAESTRE DEL CALABOZO
             </span>
             <span className="text-xs text-[#a8a29e] font-cinzel font-semibold">
-              • CÁMARA {roomIndex} / {totalRooms} {roomIndex >= totalRooms ? '⚔️ JEFE' : ''}
+              • CÁMARA {roomIndex} / {totalRooms}{' '}
+              {encounterType === 'BOSS'
+                ? '⚔️ JEFE'
+                : encounterType === 'ELITE'
+                ? '💀 ÉLITE'
+                : encounterType === 'SANCTUARY'
+                ? '⚖️ SANTUARIO'
+                : ''}
+            </span>
+            <span className="hidden md:inline-flex text-[10px] text-amber-400/90 font-cinzel">
+              — {mutation.title}
             </span>
           </div>
-          <p className="text-xs md:text-sm text-[#f5f5f4] font-serif italic tracking-normal leading-tight mt-0.5 min-h-[1.4rem]">
+          <p className="text-xs md:text-sm text-[#f5f5f4] font-serif italic tracking-normal leading-tight mt-0.5 min-h-[1.3rem]">
             "{displayedText}"
             <span className="animate-pulse text-[#b45309]">|</span>
           </p>
         </div>
 
-        {/* Mutation Runes & Sound Toggle */}
+        {/* Director Anger Meter, Mutation Runes & Sound Toggle */}
         <div className="flex items-center gap-2 flex-shrink-0 pointer-events-auto">
+          {/* Live AI Director Anger / Intervention Meter */}
+          <div
+            className="hidden sm:flex flex-col items-end bg-[#1c1917] border border-[#44403c] px-2 py-1 rounded"
+            title="Cuando llega al 100%, el Director IA interviene en vivo con meteoros y campeones mutantes"
+          >
+            <span className="text-[8px] font-cinzel text-red-400 uppercase flex items-center gap-0.5 font-bold">
+              <Flame size={9} className="fill-red-500 text-red-500" /> IRA IA: {directorAnger}%
+            </span>
+            <div className="w-16 h-1 bg-[#0c0a09] rounded overflow-hidden mt-0.5">
+              <div
+                className="h-full bg-gradient-to-r from-amber-500 to-red-600 transition-all duration-150"
+                style={{ width: `${Math.min(100, directorAnger)}%` }}
+              ></div>
+            </div>
+          </div>
+
           {mutation.frictionMultiplier < 0.3 && (
-            <span className="hidden sm:inline-flex items-center text-[10px] bg-[#1c1917] border border-[#44403c] text-sky-300 px-2 py-0.5 rounded font-cinzel">
-              ❄ Hielo Resbaladizo
+            <span className="hidden lg:inline-flex items-center text-[10px] bg-[#1c1917] border border-[#44403c] text-sky-300 px-2 py-0.5 rounded font-cinzel">
+              ❄ Hielo
             </span>
           )}
           {mutation.bulletBouncesBonus > 0 && (
-            <span className="hidden sm:inline-flex items-center text-[10px] bg-[#1c1917] border border-[#44403c] text-amber-300 px-2 py-0.5 rounded font-cinzel">
+            <span className="hidden lg:inline-flex items-center text-[10px] bg-[#1c1917] border border-[#44403c] text-amber-300 px-2 py-0.5 rounded font-cinzel">
               ⚡ Rebotes +{mutation.bulletBouncesBonus}
             </span>
           )}
-          {mutation.lowVisibility && (
-            <span className="hidden sm:inline-flex items-center text-[10px] bg-[#1c1917] border border-[#44403c] text-stone-300 px-2 py-0.5 rounded font-cinzel">
-              👁 Niebla Oscura
+          {mutation.hazardType === 'SPIKE_TRAPS' && (
+            <span className="hidden lg:inline-flex items-center text-[10px] bg-[#1c1917] border border-[#44403c] text-rose-300 px-2 py-0.5 rounded font-cinzel">
+              🗡 Pinchos
+            </span>
+          )}
+          {mutation.hazardType === 'LAVA_PITS' && (
+            <span className="hidden lg:inline-flex items-center text-[10px] bg-[#1c1917] border border-[#44403c] text-orange-300 px-2 py-0.5 rounded font-cinzel">
+              🌋 Lava
             </span>
           )}
 

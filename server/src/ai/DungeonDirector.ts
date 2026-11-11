@@ -1,18 +1,19 @@
 import { config } from '../config.js';
-import { RoomMutation, Relic, DirectorDialogue } from '../types.js';
+import { RoomMutation, Relic, DirectorDialogue, DirectorPact, PlayerEntity } from '../types.js';
 import { callMiniMax } from './minimax.js';
-import { MOCK_MUTATIONS, MOCK_RELICS, MOCK_DIRECTOR_QUOTES } from './mockDirector.js';
+import { MOCK_MUTATIONS, MOCK_RELICS, MOCK_DIRECTOR_QUOTES, MOCK_PACTS } from './mockDirector.js';
 
 interface PrefetchedRoomData {
   mutation: RoomMutation;
   relics: Relic[];
+  pact: DirectorPact;
 }
 
 export class DungeonDirector {
   private prefetchCache = new Map<number, Promise<PrefetchedRoomData>>();
 
   /**
-   * Generates or retrieves from background cache the room mutation and chest relics.
+   * Generates or retrieves from background cache the room mutation, chest relics, and AI pact.
    */
   public async getRoomData(roomIndex: number, totalRooms: number): Promise<PrefetchedRoomData> {
     const isBoss = roomIndex >= totalRooms;
@@ -34,109 +35,148 @@ export class DungeonDirector {
    * Pre-fetches the next room in background so player door transitions are 0 ms.
    */
   public prefetchNextRoom(roomIndex: number, totalRooms: number): void {
-    if (roomIndex > totalRooms) return;
+    if (roomIndex > totalRooms + 10) return;
     if (this.prefetchCache.has(roomIndex)) return;
 
-    const isBoss = roomIndex >= totalRooms;
+    const isBoss = roomIndex === totalRooms || (roomIndex > totalRooms && roomIndex % 3 === 0);
     const promise = this.generateFreshRoomData(roomIndex, isBoss);
     this.prefetchCache.set(roomIndex, promise);
   }
 
   private async generateFreshRoomData(roomIndex: number, isBoss: boolean): Promise<PrefetchedRoomData> {
+    const fallbackPact = {
+      ...MOCK_PACTS[(roomIndex - 1) % MOCK_PACTS.length],
+      id: `pact_${roomIndex}_${Date.now()}`,
+      used: false,
+    };
+
     if (!config.minimax.apiKey) {
       const mockMutation = MOCK_MUTATIONS[(roomIndex - 1) % MOCK_MUTATIONS.length];
       const mockRelics = this.pickRandomRelics(3);
-      return { mutation: mockMutation, relics: mockRelics };
+      return { mutation: mockMutation, relics: mockRelics, pact: fallbackPact };
     }
 
     try {
       console.log(`[Director MiniMax Fast] Generating Room ${roomIndex} (Boss: ${isBoss})...`);
-      const systemPrompt = `Eres "El Director Supremo del Calabozo", una IA sarcástica y tramposa que controla un calabozo mutante en un videojuego de acción 2D roguelite.
-Tu trabajo es inventar las MUTACIONES FÍSICAS de la sala y 3 RELIQUIAS que recompensarán a los supervivientes.
+      const systemPrompt = `Eres "El Director Supremo del Calabozo", una IA sarcástica y brillante que controla un calabozo mutante en un videojuego roguelite cooperativo.
+Tu trabajo es inventar las MUTACIONES FÍSICAS de la sala, 3 RELIQUIAS con sinergias elementales y 1 PACTO TENTADOR para el Altar del Abismo.
 Debes responder ÚNICAMENTE con un JSON válido (sin backticks ni markdown).
 
 Formato JSON obligatorio:
 {
   "mutation": {
-    "title": "Nombre cómico de la sala",
-    "description": "Descripción breve de la trampa física",
+    "title": "Nombre cómico e imponente de la cámara",
+    "description": "Descripción breve de la anomalía física y trampas",
     "directorRoast": "Frase sarcástica de bienvenida a la sala (1 oración mordaz)",
-    "frictionMultiplier": 0.2, // Entre 0.15 (hielo ultra resbaladizo) y 1.0 (normal)
-    "bulletBouncesBonus": 2, // Rebotes extra en paredes (0 a 3)
-    "enemySpeedMultiplier": 1.2, // Multiplicador de velocidad de monstruos (0.8 a 1.5)
+    "frictionMultiplier": 0.25,
+    "bulletBouncesBonus": 2,
+    "enemySpeedMultiplier": 1.15,
     "playerDamageMultiplier": 1.1,
-    "lowVisibility": false, // true si hay niebla oscura
-    "visibilityRadius": 300,
-    "hazardType": "NONE" // "NONE" | "LAVA_PITS" | "POISON_SPORES"
+    "lowVisibility": false,
+    "visibilityRadius": 320,
+    "hazardType": "SPIKE_TRAPS" // "NONE" | "LAVA_PITS" | "POISON_SPORES" | "SPIKE_TRAPS" | "GRAVITY_WELL"
+  },
+  "pact": {
+    "title": "Nombre del Pacto Oscuro",
+    "description": "Oferta tentadora del Director",
+    "costText": "Sacrificas 25% HP actual",
+    "rewardText": "+35% Daño y Rayos en Cadena",
+    "type": "BLOOD_FOR_POWER" // "BLOOD_FOR_POWER" | "ELITE_AMBUSH" | "CURSED_ROULETTE" | "VAMPIRIC_HUNGER"
   },
   "relics": [
     {
       "id": "rel_${Date.now()}_1",
-      "name": "Nombre cómico del objeto",
+      "name": "Nombre cómico del artefacto",
       "lore": "Historia absurda de 1 línea",
-      "icon": "⚡", // Emoji representativo
-      "buffDescription": "+30% daño de ataque",
+      "icon": "⚡",
+      "rarity": "LEGENDARY", // "COMMON" | "RARE" | "LEGENDARY" | "CURSED"
+      "buffDescription": "+30% daño y Rayos en Cadena",
       "curseDescription": "Opcional: pequeña maldición cómica",
       "modifiers": {
-        "damageMultiplier": 1.3,
+        "damageMultiplier": 1.25,
         "moveSpeedMultiplier": 1.0,
         "maxHpBonus": 0,
-        "attackCooldownMultiplier": 1.0,
-        "bulletBouncesBonus": 0,
-        "bulletCountBonus": 0
+        "attackCooldownMultiplier": 0.9,
+        "bulletBouncesBonus": 1,
+        "bulletCountBonus": 0,
+        "critChanceBonus": 0.15,
+        "chainLightning": true,
+        "burnOnHit": false,
+        "freezeOnHit": false,
+        "poisonOnHit": false
       }
     }
   ]
 }`;
 
-      const userPrompt = `Genera la sala ${roomIndex} de 6.${isBoss ? ' ¡ATENCIÓN: ES LA SALA DEL JEFE FINAL!' : ' Sala de combate intermedio.'}`;
+      const userPrompt = `Genera la cámara ${roomIndex}.${isBoss ? ' ¡ATENCIÓN: ES UNA CÁMARA DE JEFE SUPREMO!' : ' Cámara de asalto con trampas y sinergias.'}`;
 
       const rawJson = await callMiniMax([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
-      ], 0.7, 750);
+      ], 0.7, 850);
 
       const parsed = JSON.parse(rawJson);
 
+      const validHazards = ['NONE', 'LAVA_PITS', 'POISON_SPORES', 'SPIKE_TRAPS', 'GRAVITY_WELL'];
+      const hazardType = validHazards.includes(parsed.mutation?.hazardType)
+        ? parsed.mutation.hazardType
+        : MOCK_MUTATIONS[(roomIndex - 1) % MOCK_MUTATIONS.length].hazardType;
+
       const mutation: RoomMutation = {
-        title: parsed.mutation?.title || `Sala Mutante ${roomIndex}`,
-        description: parsed.mutation?.description || 'Peligro ambiental no clasificado.',
-        directorRoast: parsed.mutation?.directorRoast || 'Disfruten sus últimos segundos con vida.',
-        frictionMultiplier: typeof parsed.mutation?.frictionMultiplier === 'number' 
-          ? Math.max(0.15, Math.min(1.2, parsed.mutation.frictionMultiplier)) 
+        title: parsed.mutation?.title || `Cámara Mutante ${roomIndex}`,
+        description: parsed.mutation?.description || 'Anomalía física detectada por el Tribunal.',
+        directorRoast: parsed.mutation?.directorRoast || 'Disfruten sus últimos segundos con seguro médico.',
+        frictionMultiplier: typeof parsed.mutation?.frictionMultiplier === 'number'
+          ? Math.max(0.15, Math.min(1.2, parsed.mutation.frictionMultiplier))
           : 1.0,
         bulletBouncesBonus: typeof parsed.mutation?.bulletBouncesBonus === 'number'
           ? Math.min(3, Math.max(0, parsed.mutation.bulletBouncesBonus))
           : 1,
         enemySpeedMultiplier: typeof parsed.mutation?.enemySpeedMultiplier === 'number'
-          ? Math.max(0.8, Math.min(1.6, parsed.mutation.enemySpeedMultiplier))
+          ? Math.max(0.85, Math.min(1.5, parsed.mutation.enemySpeedMultiplier))
           : 1.1,
         playerDamageMultiplier: typeof parsed.mutation?.playerDamageMultiplier === 'number'
           ? parsed.mutation.playerDamageMultiplier
           : 1.0,
         lowVisibility: !!parsed.mutation?.lowVisibility,
         visibilityRadius: parsed.mutation?.visibilityRadius || 300,
-        hazardType: parsed.mutation?.hazardType || 'NONE',
+        hazardType,
       };
 
       const relics: Relic[] = Array.isArray(parsed.relics) && parsed.relics.length >= 1
         ? parsed.relics.slice(0, 3).map((r: any, idx: number) => ({
             id: r.id || `relic_dyn_${roomIndex}_${idx}_${Date.now()}`,
-            name: r.name || 'Amuleto Misterioso',
-            lore: r.lore || 'Nadie recuerda quién lo fabricó.',
+            name: r.name || 'Amuleto del Caos',
+            lore: r.lore || 'Forjado por un becario del averno.',
             icon: r.icon || '🎁',
-            buffDescription: r.buffDescription || '+20% daño',
+            rarity: r.rarity || 'RARE',
+            buffDescription: r.buffDescription || '+25% daño arcano',
             curseDescription: r.curseDescription,
-            modifiers: r.modifiers || { damageMultiplier: 1.2 },
+            modifiers: r.modifiers || { damageMultiplier: 1.25 },
           }))
         : this.pickRandomRelics(3);
 
-      return { mutation, relics };
+      const pact: DirectorPact = parsed.pact?.title
+        ? {
+            id: `pact_ai_${roomIndex}_${Date.now()}`,
+            title: parsed.pact.title,
+            description: parsed.pact.description || fallbackPact.description,
+            costText: parsed.pact.costText || fallbackPact.costText,
+            rewardText: parsed.pact.rewardText || fallbackPact.rewardText,
+            type: ['BLOOD_FOR_POWER', 'ELITE_AMBUSH', 'CURSED_ROULETTE', 'VAMPIRIC_HUNGER'].includes(parsed.pact.type)
+              ? parsed.pact.type
+              : fallbackPact.type,
+            used: false,
+          }
+        : fallbackPact;
+
+      return { mutation, relics, pact };
     } catch (err) {
       console.warn('[Director] MiniMax generation fallback to mock:', err);
       const mockMutation = MOCK_MUTATIONS[(roomIndex - 1) % MOCK_MUTATIONS.length];
       const mockRelics = this.pickRandomRelics(3);
-      return { mutation: mockMutation, relics: mockRelics };
+      return { mutation: mockMutation, relics: mockRelics, pact: fallbackPact };
     }
   }
 
@@ -144,67 +184,105 @@ Formato JSON obligatorio:
     totalDamageDealt: number;
     rangedAttacksCount: number;
     meleeAttacksCount: number;
+    skillsUsedCount: number;
+    synergiesCount: number;
     totalPlayerDeaths: number;
   }): Promise<{ bossName: string; introQuote: string; phase2Roast: string }> {
     const isMeleeHeavy = telemetry.meleeAttacksCount > telemetry.rangedAttacksCount;
 
     if (!config.minimax.apiKey) {
       return {
-        bossName: isMeleeHeavy ? 'Gólem Reflectante de Muros de Acero' : 'El Coloso con Rayo Burocrático',
-        introQuote: isMeleeHeavy 
-          ? '¿Les gusta acercarse tanto? Espero que disfruten abrazar cuchillas giratorias.'
-          : 'Cobardes a distancia... mis proyectiles rastreadores tienen sus nombres grabados.',
-        phase2Roast: '¡Fase 2 activada! Se acabó el periodo de prueba gratuita.',
+        bossName: isMeleeHeavy ? 'El Juez Acorazado de Cuchillas' : 'El Gran Arquitecto del Abismo',
+        introQuote: isMeleeHeavy
+          ? '¿Les gusta golpear de cerca? He calibrado mis ondas de choque y meteoros para triturar huesos.'
+          : `¿${telemetry.rangedAttacksCount} disparos a distancia y ${telemetry.synergiesCount} sinergias? Veamos cómo esquivan mi protocolo de aniquilación total.`,
+        phase2Roast: '¡FASE 2 ACTIVADA! ¡SE ACABÓ EL PERIODO DE PRUEBA GRATUITA!',
       };
     }
 
     try {
       const prompt = `Los jugadores han llegado al JEFE FINAL de Calabozo Mutante.
-Telemetría de combate del equipo:
+Telemetría del equipo:
 - Ataques a distancia: ${telemetry.rangedAttacksCount}
 - Ataques cuerpo a cuerpo: ${telemetry.meleeAttacksCount}
-- Muertes de jugadores acumuladas: ${telemetry.totalPlayerDeaths}
+- Habilidades especiales usadas: ${telemetry.skillsUsedCount}
+- Sinergias elementales: ${telemetry.synergiesCount}
+- Muertes acumuladas: ${telemetry.totalPlayerDeaths}
 
 Devuelve un JSON con:
 {
-  "bossName": "Nombre cómico imponente para el jefe",
-  "introQuote": "Discurso de entrada de 1 a 2 oraciones burlándose de su estilo de juego",
+  "bossName": "Nombre cómico e imponente para el jefe",
+  "introQuote": "Discurso de entrada de 1 a 2 oraciones burlándose de sus estadísticas",
   "phase2Roast": "Grito de furia cuando el jefe llega al 50% de HP"
 }`;
 
       const res = await callMiniMax([
         { role: 'system', content: 'Eres el Director del Calabozo diseñando el jefe final. Responde solo con JSON.' },
-        { role: 'user', content: prompt }
+        { role: 'user', content: prompt },
       ], 0.7, 400);
 
       const data = JSON.parse(res);
       return {
         bossName: data.bossName || 'El Algoritmo Supremo Castigador',
         introQuote: data.introQuote || 'Es hora de auditar sus mediocres vidas.',
-        phase2Roast: data.phase2Roast || '¡Fase 2! ¡Aumentando el voltaje!',
+        phase2Roast: data.phase2Roast || '¡Fase 2! ¡Aumentando el voltaje al 200%!',
       };
     } catch {
       return {
         bossName: 'El Gran Auditor del Abismo',
-        introQuote: 'Sus contratos de vida están a punto de ser cancelados sin indemnización.',
+        introQuote: 'Sus contratos de vida están a punto de ser rescindidos sin indemnización.',
         phase2Roast: '¡Sistemas al 100%! ¡Abran fuego en todos los sectores!',
       };
     }
   }
 
-  public getDirectorQuote(type: 'roomClear' | 'playerDown' | 'bossIntro'): DirectorDialogue {
-    const list = MOCK_DIRECTOR_QUOTES[type];
+  public getDirectorQuote(type: 'roomClear' | 'playerDown' | 'bossIntro' | 'intervention'): DirectorDialogue {
+    const list = MOCK_DIRECTOR_QUOTES[type] || MOCK_DIRECTOR_QUOTES.roomClear;
     const text = list[Math.floor(Math.random() * list.length)];
     return {
       speaker: 'Director del Calabozo',
       text,
-      mood: type === 'playerDown' ? 'MOCKING' : type === 'roomClear' ? 'IMPRESSED' : 'ANGRY',
+      mood:
+        type === 'playerDown'
+          ? 'MOCKING'
+          : type === 'roomClear'
+          ? 'IMPRESSED'
+          : type === 'intervention'
+          ? 'CHAOTIC'
+          : 'ANGRY',
       timestamp: Date.now(),
     };
   }
 
-  private pickRandomRelics(count: number): Relic[] {
+  /**
+   * Computes dynamic psychological titles for each player based on their combat telemetry.
+   */
+  public assignPlayerTitles(players: Record<string, PlayerEntity>): void {
+    const list = Object.values(players);
+    for (const p of list) {
+      if (p.revivesCount >= 2) {
+        p.title = 'Ángel Guardián del Gremio';
+      } else if (p.synergiesTriggered >= 4) {
+        p.title = 'Alquimista del Caos Elemental';
+      } else if (p.maxCombo >= 25) {
+        p.title = 'Torbellino Intocable';
+      } else if (p.gold >= 150) {
+        p.title = 'Magnate del Botín Maldito';
+      } else if (p.kills >= 12) {
+        p.title = 'Verdugo Implacable';
+      } else if (p.damageDealt >= 1200) {
+        p.title = 'Demolición Industrial';
+      } else {
+        p.title = p.classType === 'PICARO' ? 'Sombra Letal' : 'Superviviente del Abismo';
+      }
+    }
+  }
+
+  public pickRandomRelics(count: number): Relic[] {
     const shuffled = [...MOCK_RELICS].sort(() => 0.5 - Math.random());
-    return shuffled.slice(0, count);
+    return shuffled.slice(0, count).map((r, i) => ({
+      ...r,
+      id: `${r.id}_${Date.now()}_${i}`,
+    }));
   }
 }

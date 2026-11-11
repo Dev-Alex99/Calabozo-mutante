@@ -1,4 +1,4 @@
-import { GameWorldState, PlayerEntity, EnemyEntity, ProjectileEntity, DoorState } from '../types';
+import { GameWorldState, PlayerEntity, EnemyEntity, ProjectileEntity } from '../types';
 import { ParticleSystem } from './ParticleSystem';
 import { FloatingTextManager } from './FloatingText';
 import { SpriteModels } from './SpriteModels';
@@ -31,6 +31,9 @@ export class GameRenderer {
   private totalTime = 0;
   private dustMotes: DustMote[] = [];
 
+  // Smooth 60-144 FPS entity position interpolation buffer for multiplayer
+  private interpPositions = new Map<string, { x: number; y: number }>();
+
   constructor() {
     this.initDustMotes();
   }
@@ -51,8 +54,8 @@ export class GameRenderer {
   }
 
   public addScreenShake(intensity = 6, duration = 0.2) {
-    this.screenShakeIntensity = intensity;
-    this.screenShakeTime = duration;
+    this.screenShakeIntensity = Math.max(this.screenShakeIntensity, intensity);
+    this.screenShakeTime = Math.max(this.screenShakeTime, duration);
   }
 
   public addBloodDecal(x: number, y: number, color = '#7f1d1d') {
@@ -61,9 +64,7 @@ export class GameRenderer {
     ctx.save();
     ctx.fillStyle = color;
     ctx.beginPath();
-    // Central blood blotch
     ctx.arc(x, y, 6 + Math.random() * 7, 0, Math.PI * 2);
-    // Splatter droplets around
     for (let i = 0; i < 4; i++) {
       const a = Math.random() * Math.PI * 2;
       const d = 7 + Math.random() * 12;
@@ -71,6 +72,22 @@ export class GameRenderer {
     }
     ctx.fill();
     ctx.restore();
+  }
+
+  private getSmoothPos(id: string, targetX: number, targetY: number, vx: number, vy: number, dt: number) {
+    const prev = this.interpPositions.get(id);
+    if (!prev || Math.hypot(targetX - prev.x, targetY - prev.y) > 160) {
+      const fresh = { x: targetX, y: targetY };
+      this.interpPositions.set(id, fresh);
+      return fresh;
+    }
+    // Velocity dead-reckoning + high-gain convergence for zero-jitter 60+ FPS rendering
+    prev.x += vx * dt * 0.35;
+    prev.y += vy * dt * 0.35;
+    const blend = Math.min(1, dt * 24);
+    prev.x += (targetX - prev.x) * blend;
+    prev.y += (targetY - prev.y) * blend;
+    return prev;
   }
 
   public render(
@@ -88,10 +105,18 @@ export class GameRenderer {
 
     // 1. Camera Tracking with smooth Lerp
     if (localPlayer) {
-      const targetCamX = localPlayer.x - canvasWidth / 2;
-      const targetCamY = localPlayer.y - canvasHeight / 2;
-      this.cameraX += (targetCamX - this.cameraX) * 0.12;
-      this.cameraY += (targetCamY - this.cameraY) * 0.12;
+      const smoothLocal = this.getSmoothPos(
+        localPlayer.id,
+        localPlayer.x,
+        localPlayer.y,
+        localPlayer.vx,
+        localPlayer.vy,
+        dt
+      );
+      const targetCamX = smoothLocal.x - canvasWidth / 2;
+      const targetCamY = smoothLocal.y - canvasHeight / 2;
+      this.cameraX += (targetCamX - this.cameraX) * 0.14;
+      this.cameraY += (targetCamY - this.cameraY) * 0.14;
     } else {
       this.cameraX = roomW / 2 - canvasWidth / 2;
       this.cameraY = roomH / 2 - canvasHeight / 2;
@@ -110,7 +135,6 @@ export class GameRenderer {
     ctx.save();
     ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-    // Apply Camera & Shake Transform
     ctx.translate(-Math.round(this.cameraX + shakeX), -Math.round(this.cameraY + shakeY));
 
     // 2. High-Performance Pre-rendered Dungeon Floor, Walls & Gothic Scenery
@@ -127,74 +151,126 @@ export class GameRenderer {
     // 3. Wall Torches with Animated Multi-Layered Flames
     this.drawTorches(ctx, roomW, roomH, this.totalTime);
 
-    // 4. Doors (Portcullis and Golden Archway)
-    const northDoor = world.room.doors.NORTH;
-    if (northDoor) {
+    // 4. Branching Doors (NORTH, EAST, WEST)
+    const doors = world.room.doors;
+    if (doors.NORTH) {
       SpriteModels.drawDoor(
         ctx,
-        northDoor.x,
-        northDoor.y,
-        northDoor.width,
-        northDoor.height,
-        world.room.isCleared
+        doors.NORTH.x,
+        doors.NORTH.y,
+        doors.NORTH.width,
+        doors.NORTH.height,
+        doors.NORTH.open,
+        doors.NORTH
       );
+    }
+    if (doors.EAST && doors.EAST.open) {
+      SpriteModels.drawDoor(
+        ctx,
+        doors.EAST.x,
+        doors.EAST.y,
+        doors.EAST.width,
+        doors.EAST.height,
+        doors.EAST.open,
+        doors.EAST
+      );
+    }
+    if (doors.WEST && doors.WEST.open) {
+      SpriteModels.drawDoor(
+        ctx,
+        doors.WEST.x,
+        doors.WEST.y,
+        doors.WEST.width,
+        doors.WEST.height,
+        doors.WEST.open,
+        doors.WEST
+      );
+    }
+
+    // 4.5. Environmental & Skill Hazards (Lava, Poison Spores, Spike Traps, Arcane Vortex, Meteor Strikes)
+    if (world.room.hazards) {
+      for (const h of world.room.hazards) {
+        SpriteModels.drawHazard(ctx, h, this.totalTime);
+      }
+    }
+
+    // 4.8. Interactive Barrels (Explosive, Frost, Toxic)
+    if (world.room.barrels) {
+      for (const b of world.room.barrels) {
+        SpriteModels.drawBarrel(ctx, b, this.totalTime);
+      }
     }
 
     // 5. Chest (Ornate Carved Medieval Chest)
     if (world.room.chest) {
+      const localClaimed = world.room.chest.claimedByPlayerIds?.includes(localPlayerId);
       SpriteModels.drawChest(
         ctx,
         world.room.chest.x,
         world.room.chest.y,
-        world.room.chest.isOpen,
+        world.room.chest.isOpen || !!localClaimed,
         this.totalTime
       );
     }
 
-    // 5.5. Draw Heart Pickups (Healing drops)
+    // 5.2. Altar of Pacts & Armory
+    if (world.room.altar) {
+      SpriteModels.drawAltar(ctx, world.room.altar, this.totalTime);
+    }
+
+    // 5.5. Draw Pickups (Hearts, Gold Coins, Shield Orbs, Frenzy Orbs)
     if (world.room.hearts) {
       for (const heart of world.room.hearts) {
         SpriteModels.drawHeartPickup(ctx, heart, this.totalTime);
       }
     }
 
-    // 5.6. Draw Enemy Aim Telegraph Warning Lines (Floor laser)
+    // 5.6. Draw Enemy Aim Telegraph Warning Lines
     for (const enemy of world.enemies) {
       SpriteModels.drawEnemyTelegraph(ctx, enemy);
     }
 
-    // 6. Draw Enemies (Original Art Models)
+    // 6. Draw Enemies with Smooth 60 FPS Interpolation
     for (const enemy of world.enemies) {
-      SpriteModels.drawEnemy(ctx, enemy, this.totalTime);
+      const sp = this.getSmoothPos(enemy.id, enemy.x, enemy.y, enemy.vx, enemy.vy, dt);
+      SpriteModels.drawEnemy(ctx, { ...enemy, x: sp.x, y: sp.y }, this.totalTime);
     }
 
-    // 7. Draw Players (Detailed Class Models & Motion Particles)
+    // 7. Draw Players with Smooth 60 FPS Interpolation & Motion Particles
     for (const player of Object.values(world.players)) {
+      const sp = this.getSmoothPos(player.id, player.x, player.y, player.vx, player.vy, dt);
+      const smoothPlayer: PlayerEntity = { ...player, x: sp.x, y: sp.y };
+
       if (player.isAlive) {
-        // Dash Phantom Ghosts
         if (player.isDashing) {
-          const ghostColor = player.classType === 'GUERRERO' ? '#dc2626' : player.classType === 'CAZADOR' ? '#16a34a' : '#9333ea';
-          this.particleSystem.addGhostTrail(player.x, player.y, player.angle, 16, ghostColor);
+          const ghostColor =
+            player.classType === 'GUERRERO'
+              ? '#dc2626'
+              : player.classType === 'CAZADOR'
+              ? '#16a34a'
+              : player.classType === 'PICARO'
+              ? '#10b981'
+              : '#9333ea';
+          this.particleSystem.addGhostTrail(sp.x, sp.y, player.angle, 16, ghostColor);
         }
-        // Footstep dust puffs
         if (Math.hypot(player.vx, player.vy) > 35 && Math.random() > 0.65) {
-          this.particleSystem.emitDustPuff(player.x, player.y + 12, 1);
+          this.particleSystem.emitDustPuff(sp.x, sp.y + 12, 1);
         }
       }
 
-      SpriteModels.drawPlayer(ctx, player, player.id === localPlayerId, this.totalTime);
+      SpriteModels.drawPlayer(ctx, smoothPlayer, player.id === localPlayerId, this.totalTime);
     }
 
-    // 8. Draw Projectiles (Arrows, Fireballs, Slashing waves)
+    // 8. Draw Projectiles
     for (const proj of world.projectiles) {
       this.drawProjectile(ctx, proj);
     }
 
-    // 9. Update & Draw Particles (Sparks, blood, smoke)
+    // 9. Update & Draw Particles (Sparks, blood, shockwaves, lightning arcs)
     this.particleSystem.update(dt);
     this.particleSystem.render(ctx);
 
-    // 10. Floating Damage Numbers
+    // 10. Floating Damage Numbers & Synergy Callouts
     this.textManager.update(dt);
     this.textManager.render(ctx);
 
@@ -204,11 +280,6 @@ export class GameRenderer {
     ctx.restore();
   }
 
-  /**
-   * PERFORMANCE & ART OPTIMIZATION:
-   * Bakes flagstone bevels, central ritual circle, 4 gothic stone pillars,
-   * wall chains, corner cobwebs, floor drains, and skulls into an offscreen canvas.
-   */
   private ensureOffscreenBackground(world: GameWorldState, w: number, h: number) {
     if (
       this.offscreenCanvas &&
@@ -217,6 +288,8 @@ export class GameRenderer {
     ) {
       return;
     }
+
+    this.interpPositions.clear();
 
     if (!this.offscreenCanvas) {
       this.offscreenCanvas = document.createElement('canvas');
@@ -231,7 +304,6 @@ export class GameRenderer {
     this.offscreenCanvas.height = h;
     this.decalsCanvas.width = w;
     this.decalsCanvas.height = h;
-    // Clear decals on room transition
     if (this.decalsCtx) {
       this.decalsCtx.clearRect(0, 0, w, h);
     }
@@ -245,10 +317,10 @@ export class GameRenderer {
     const pad = 44;
     const isIce = world.room.mutation.frictionMultiplier < 0.3;
     const isMud = world.room.mutation.frictionMultiplier === 0.5;
-    const isBoss = world.room.roomIndex >= 5;
+    const isBoss = world.room.isBossRoom;
     const theme = isIce ? 'ice' : isMud ? 'mud' : isBoss ? 'fire' : 'gold';
 
-    // 1. Floor Base (Deep dark stone)
+    // 1. Floor Base
     ctx.fillStyle = isIce ? '#0a1120' : isMud ? '#141210' : '#0e0c0b';
     ctx.fillRect(pad, pad, w - pad * 2, h - pad * 2);
 
@@ -261,13 +333,17 @@ export class GameRenderer {
 
         const hash = (Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1;
 
-        // Base tile tone
         ctx.fillStyle = isIce
-          ? hash > 0.5 ? '#162032' : '#0f172a'
-          : hash > 0.6 ? '#1c1917' : hash > 0.3 ? '#171412' : '#13110f';
+          ? hash > 0.5
+            ? '#162032'
+            : '#0f172a'
+          : hash > 0.6
+          ? '#1c1917'
+          : hash > 0.3
+          ? '#171412'
+          : '#13110f';
         ctx.fillRect(x + 1, y + 1, tw - 2, th - 2);
 
-        // Top & Left 3D Bevel Highlight
         ctx.strokeStyle = isIce ? '#25334d' : hash > 0.5 ? '#292524' : '#221f1d';
         ctx.lineWidth = 1;
         ctx.beginPath();
@@ -276,7 +352,6 @@ export class GameRenderer {
         ctx.lineTo(x + tw - 2, y + 1);
         ctx.stroke();
 
-        // Bottom & Right 3D Bevel Shadow
         ctx.strokeStyle = '#070605';
         ctx.beginPath();
         ctx.moveTo(x + tw - 1, y + 1);
@@ -284,7 +359,6 @@ export class GameRenderer {
         ctx.lineTo(x + 1, y + th - 1);
         ctx.stroke();
 
-        // Occasional stone cracks
         if (hash > 0.78) {
           ctx.strokeStyle = isIce ? '#38bdf8' : '#292524';
           ctx.lineWidth = 1;
@@ -295,7 +369,6 @@ export class GameRenderer {
           ctx.stroke();
         }
 
-        // Moss or slime patches in swamp/mud
         if (isMud && hash > 0.72) {
           ctx.fillStyle = 'rgba(21, 128, 61, 0.25)';
           ctx.beginPath();
@@ -308,11 +381,16 @@ export class GameRenderer {
     // 3. Central Ancient Gothic Ritual Octagram
     SpriteModels.drawRitualCircle(ctx, w / 2, h / 2, 125, 0, theme);
 
-    // 4. Four Grand Gothic Stone Pillars with Cast Shadows
-    SpriteModels.drawGothicPillar(ctx, w * 0.22, h * 0.28, 0);
-    SpriteModels.drawGothicPillar(ctx, w * 0.78, h * 0.28, 0);
-    SpriteModels.drawGothicPillar(ctx, w * 0.22, h * 0.72, 0);
-    SpriteModels.drawGothicPillar(ctx, w * 0.78, h * 0.72, 0);
+    // 4. Four Grand Gothic Stone Pillars with Cast Shadows (Match physical pillar coordinates)
+    const pillars = world.room.pillars || [
+      { id: '1', x: w * 0.22, y: h * 0.28, radius: 25 },
+      { id: '2', x: w * 0.78, y: h * 0.28, radius: 25 },
+      { id: '3', x: w * 0.22, y: h * 0.72, radius: 25 },
+      { id: '4', x: w * 0.78, y: h * 0.72, radius: 25 },
+    ];
+    for (const pil of pillars) {
+      SpriteModels.drawGothicPillar(ctx, pil.x, pil.y, 0);
+    }
 
     // 5. Hanging Iron Chains on North Wall
     SpriteModels.drawWallChain(ctx, w * 0.15, pad, 5, 0);
@@ -329,10 +407,8 @@ export class GameRenderer {
     // 7. Piles of Skulls & Broken Bones
     SpriteModels.drawBonePile(ctx, pad + 26, h - pad - 18);
     SpriteModels.drawBonePile(ctx, w - pad - 30, h - pad - 18);
-    SpriteModels.drawBonePile(ctx, w * 0.22 + 20, h * 0.28 + 16);
-    SpriteModels.drawBonePile(ctx, w * 0.78 - 22, h * 0.72 + 16);
 
-    // 8. Iron Floor Drains with Dark Abyss
+    // 8. Iron Floor Drains
     SpriteModels.drawFloorDrain(ctx, w * 0.12, h * 0.5, 24);
     SpriteModels.drawFloorDrain(ctx, w * 0.88, h * 0.5, 24);
 
@@ -343,7 +419,6 @@ export class GameRenderer {
     ctx.fillRect(0, 0, pad, h);
     ctx.fillRect(w - pad, 0, pad, h);
 
-    // Wall Brick Details & Relief
     ctx.strokeStyle = '#292524';
     ctx.lineWidth = 1.5;
     for (let x = 0; x < w; x += 32) {
@@ -355,7 +430,6 @@ export class GameRenderer {
       ctx.strokeRect(w - pad, y, pad, 24);
     }
 
-    // Inner chiseled stone ledge
     ctx.strokeStyle = '#44403c';
     ctx.lineWidth = 2.5;
     ctx.strokeRect(pad, pad, w - pad * 2, h - pad * 2);
@@ -363,12 +437,10 @@ export class GameRenderer {
 
   private drawTorches(ctx: CanvasRenderingContext2D, w: number, h: number, time: number) {
     const pad = 44;
-    // Torches mounted on North wall
     SpriteModels.drawTorch(ctx, w * 0.25, pad, time);
     SpriteModels.drawTorch(ctx, w * 0.75, pad, time);
-    // Torches on side walls
-    SpriteModels.drawTorch(ctx, pad, h * 0.5, time);
-    SpriteModels.drawTorch(ctx, w - pad, h * 0.5, time);
+    SpriteModels.drawTorch(ctx, pad, h * 0.3, time);
+    SpriteModels.drawTorch(ctx, w - pad, h * 0.3, time);
   }
 
   private drawProjectile(ctx: CanvasRenderingContext2D, proj: ProjectileEntity) {
@@ -380,7 +452,6 @@ export class GameRenderer {
 
     if (proj.fromPlayer) {
       if (proj.isExplosive) {
-        // Mage Fireball: Fiery core with ember trail
         ctx.fillStyle = '#ea580c';
         ctx.beginPath();
         ctx.arc(0, 0, proj.radius, 0, Math.PI * 2);
@@ -391,7 +462,6 @@ export class GameRenderer {
         ctx.arc(2, 0, proj.radius * 0.5, 0, Math.PI * 2);
         ctx.fill();
 
-        // Flame trail
         ctx.fillStyle = 'rgba(234, 88, 12, 0.4)';
         ctx.beginPath();
         ctx.moveTo(0, -proj.radius * 0.7);
@@ -399,7 +469,6 @@ export class GameRenderer {
         ctx.lineTo(0, proj.radius * 0.7);
         ctx.fill();
       } else if (proj.radius > 16) {
-        // Warrior Melee Cleave Arc
         ctx.strokeStyle = '#f59e0b';
         ctx.lineWidth = 4;
         ctx.beginPath();
@@ -411,21 +480,30 @@ export class GameRenderer {
         ctx.beginPath();
         ctx.arc(0, 0, proj.radius - 2, -Math.PI / 4, Math.PI / 4);
         ctx.stroke();
-      } else {
-        // Ranger Arrow: Wooden shaft with steel broadhead and red fletchings
-        ctx.fillStyle = '#78350f';
-        ctx.fillRect(-12, -1, 16, 2);
-
-        // Steel Tip
-        ctx.fillStyle = '#f1f5f9';
+      } else if (proj.element === 'POISON') {
+        // Pícaro Throwing Viper Dagger
+        ctx.fillStyle = '#10b981';
         ctx.beginPath();
-        ctx.moveTo(4, -3);
-        ctx.lineTo(9, 0);
-        ctx.lineTo(4, 3);
+        ctx.moveTo(-10, -2.5);
+        ctx.lineTo(10, 0);
+        ctx.lineTo(-10, 2.5);
+        ctx.closePath();
         ctx.fill();
 
-        // Fletching
-        ctx.fillStyle = '#b91c1c';
+        ctx.fillStyle = '#d1fae5';
+        ctx.fillRect(-4, -1, 10, 2);
+      } else {
+        ctx.fillStyle = proj.isCrit ? '#38bdf8' : '#78350f';
+        ctx.fillRect(-12, -1.5, 16, 3);
+
+        ctx.fillStyle = '#f1f5f9';
+        ctx.beginPath();
+        ctx.moveTo(4, -3.5);
+        ctx.lineTo(10, 0);
+        ctx.lineTo(4, 3.5);
+        ctx.fill();
+
+        ctx.fillStyle = proj.isCrit ? '#facc15' : '#b91c1c';
         ctx.beginPath();
         ctx.moveTo(-12, -3);
         ctx.lineTo(-8, 0);
@@ -433,8 +511,7 @@ export class GameRenderer {
         ctx.fill();
       }
     } else {
-      // Enemy Dark Magic Projectile
-      ctx.fillStyle = '#991b1b';
+      ctx.fillStyle = proj.color || '#991b1b';
       ctx.beginPath();
       ctx.arc(0, 0, proj.radius, 0, Math.PI * 2);
       ctx.fill();
@@ -444,7 +521,6 @@ export class GameRenderer {
       ctx.arc(1, 0, proj.radius * 0.4, 0, Math.PI * 2);
       ctx.fill();
 
-      // Shadow trail
       ctx.fillStyle = 'rgba(153, 27, 27, 0.35)';
       ctx.beginPath();
       ctx.moveTo(0, -proj.radius * 0.8);
@@ -467,12 +543,11 @@ export class GameRenderer {
     const pad = 44;
     ctx.save();
 
-    // 1. Warm Torch Radial Lighting Halos
     const torches = [
       { x: w * 0.25, y: pad },
       { x: w * 0.75, y: pad },
-      { x: pad, y: h * 0.5 },
-      { x: w - pad, y: h * 0.5 },
+      { x: pad, y: h * 0.3 },
+      { x: w - pad, y: h * 0.3 },
     ];
 
     for (const torch of torches) {
@@ -493,7 +568,6 @@ export class GameRenderer {
       ctx.fillRect(torch.x - 200, torch.y - 200, 400, 400);
     }
 
-    // 2. Player Lantern Ambient Glow
     if (localPlayer) {
       const playerGrad = ctx.createRadialGradient(
         localPlayer.x,
@@ -501,20 +575,18 @@ export class GameRenderer {
         10,
         localPlayer.x,
         localPlayer.y,
-        140
+        150
       );
-      playerGrad.addColorStop(0, 'rgba(245, 158, 11, 0.08)');
+      playerGrad.addColorStop(0, 'rgba(245, 158, 11, 0.09)');
       playerGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
       ctx.fillStyle = playerGrad;
       ctx.fillRect(localPlayer.x - 150, localPlayer.y - 150, 300, 300);
     }
 
-    // 3. Drifting Dust Motes & Golden Embers
     for (const mote of this.dustMotes) {
       mote.x += mote.vx * dt;
       mote.y += mote.vy * dt;
 
-      // Wrap around room
       if (mote.x < pad) mote.x = w - pad - 2;
       if (mote.x > w - pad) mote.x = pad + 2;
       if (mote.y < pad) mote.y = h - pad - 2;
@@ -530,9 +602,8 @@ export class GameRenderer {
     }
     ctx.globalAlpha = 1.0;
 
-    // 4. Low Visibility / Darkness Mutation
     if (world.room.mutation.lowVisibility && localPlayer) {
-      const visRadius = world.room.mutation.visibilityRadius || 260;
+      const visRadius = world.room.mutation.visibilityRadius || 270;
 
       const grad = ctx.createRadialGradient(
         localPlayer.x,
@@ -543,7 +614,7 @@ export class GameRenderer {
         visRadius
       );
       grad.addColorStop(0, 'rgba(0, 0, 0, 0)');
-      grad.addColorStop(1, 'rgba(10, 8, 7, 0.96)');
+      grad.addColorStop(1, 'rgba(10, 8, 7, 0.94)');
 
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, w, h);

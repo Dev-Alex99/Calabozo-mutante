@@ -115,6 +115,34 @@ io.on('connection', (socket: Socket) => {
     }
   });
 
+  // Change Class in Lobby
+  socket.on('player:change_class', ({ code, classType }) => {
+    const room = roomManager.getRoom(code);
+    if (!room) return;
+    room.changePlayerClass(socket.id, classType);
+    room.broadcastState();
+  });
+
+  // Add AI Companion Bot in Lobby
+  socket.on('room:add_bot', ({ code, classType }) => {
+    const room = roomManager.getRoom(code);
+    if (!room) return;
+    const player = room.players[socket.id];
+    if (!player || !player.isHost) return;
+    room.addBotCompanion(classType);
+    room.broadcastState();
+  });
+
+  // Remove AI Companion Bots in Lobby
+  socket.on('room:remove_bots', ({ code }) => {
+    const room = roomManager.getRoom(code);
+    if (!room) return;
+    const player = room.players[socket.id];
+    if (!player || !player.isHost) return;
+    room.removeBots();
+    room.broadcastState();
+  });
+
   // Start Game
   socket.on('game:start', ({ code }) => {
     const room = roomManager.getRoom(code);
@@ -125,8 +153,18 @@ io.on('connection', (socket: Socket) => {
     room.startGame();
   });
 
+  // Continue into Endless Ascension Mode
+  socket.on('game:endless', ({ code }) => {
+    const room = roomManager.getRoom(code);
+    if (!room) return;
+    const player = room.players[socket.id];
+    if (!player || !player.isHost) return;
+
+    room.continueEndlessMode();
+  });
+
   // Player Input (30 Hz)
-  socket.on('player:input', ({ code, moveX, moveY, angle, isAttacking, isDashing }) => {
+  socket.on('player:input', ({ code, moveX, moveY, angle, isAttacking, isDashing, isUsingSkill }) => {
     const room = roomManager.getRoom(code);
     if (!room) return;
 
@@ -136,15 +174,31 @@ io.on('connection', (socket: Socket) => {
       angle: angle || 0,
       isAttacking: !!isAttacking,
       isDashing: !!isDashing,
+      isUsingSkill: !!isUsingSkill,
     });
   });
 
-  // Relic Selection
+  // Tactical Co-op Ping
+  socket.on('player:ping', ({ code, x, y, kind }) => {
+    const room = roomManager.getRoom(code);
+    if (!room) return;
+    room.handlePlayerPing(socket.id, x, y, kind);
+  });
+
+  // Relic Selection (Per-Player!)
   socket.on('relic:pick', ({ code, relicId }) => {
     const room = roomManager.getRoom(code);
     if (!room) return;
 
     room.handleRelicChoice(socket.id, relicId);
+  });
+
+  // Altar of Pacts & Armory Interaction
+  socket.on('altar:interact', ({ code, action }) => {
+    const room = roomManager.getRoom(code);
+    if (!room) return;
+
+    room.handleAltarInteract(socket.id, action);
   });
 
   // Restart Game

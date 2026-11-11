@@ -1,4 +1,4 @@
-import { PlayerEntity, EnemyEntity, HeartPickup } from '../types';
+import { PlayerEntity, EnemyEntity, HeartPickup, AltarEntity, BarrelEntity, HazardZone, DoorState } from '../types';
 
 /**
  * Handcrafted, artistic 2D procedural sprite rendering engine.
@@ -18,15 +18,41 @@ export class SpriteModels {
     ctx.save();
     ctx.translate(player.x, player.y);
 
+    const now = Date.now();
     // Mercy invulnerability i-frames flicker
-    const isInvulnerable = player.invulnerableUntil && Date.now() < player.invulnerableUntil;
+    const isInvulnerable = player.invulnerableUntil && now < player.invulnerableUntil;
     if (isInvulnerable) {
-      if (Math.floor(Date.now() / 65) % 2 === 0) {
-        ctx.globalAlpha = 0.35;
+      if (Math.floor(now / 65) % 2 === 0) {
+        ctx.globalAlpha = 0.4;
       }
     }
 
+    // Stealth shimmer for Pícaro
+    const isStealthed = player.stealthedUntil && now < player.stealthedUntil;
+    if (isStealthed) {
+      ctx.globalAlpha = 0.45;
+    }
+
     if (!player.isAlive) {
+      // Co-op Soul Revival Circle (68px radius)
+      const revProg = player.reviveProgress || 0;
+      const pulseR = 64 + Math.sin(time * 5) * 4;
+      ctx.strokeStyle = revProg > 0 ? 'rgba(34, 197, 94, 0.75)' : 'rgba(245, 158, 11, 0.35)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      ctx.arc(0, 0, pulseR, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      if (revProg > 0) {
+        ctx.strokeStyle = '#22c55e';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(0, 0, 32, -Math.PI / 2, -Math.PI / 2 + revProg * Math.PI * 2);
+        ctx.stroke();
+      }
+
       // Fallen Hero: Skeletal tombstone & pool of blood
       ctx.fillStyle = '#450a0a';
       ctx.beginPath();
@@ -52,10 +78,10 @@ export class SpriteModels {
       ctx.lineTo(5, -12);
       ctx.stroke();
 
-      ctx.fillStyle = '#991b1b';
+      ctx.fillStyle = revProg > 0 ? '#4ade80' : '#f59e0b';
       ctx.font = 'bold 10px "Cinzel", serif';
       ctx.textAlign = 'center';
-      ctx.fillText('CAÍDO', 0, -25);
+      ctx.fillText(revProg > 0 ? `REVIVIENDO ${Math.round(revProg * 100)}%` : '⚰️ REVIVIR ALIADO', 0, -26);
 
       ctx.restore();
       return;
@@ -66,6 +92,39 @@ export class SpriteModels {
     const isMoving = speed > 15;
     const walkBob = isMoving ? Math.sin(time * 14) * 2.5 : Math.sin(time * 2.5) * 1.0;
     const walkTilt = isMoving ? Math.sin(time * 7) * 0.08 : 0;
+
+    // Frenzy Combo Aura (10+ Combo)
+    if (player.combo >= 10) {
+      ctx.strokeStyle = player.combo >= 20 ? 'rgba(239, 68, 68, 0.55)' : 'rgba(245, 158, 11, 0.45)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 2, 22 + Math.sin(time * 12) * 2, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Active Shield Barrier Ring
+    if (player.shieldHp > 0) {
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.65)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, 20, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Guerrero Reflective Bulwark Spinning Aegis
+    if (player.classType === 'GUERRERO' && player.skillActiveUntil && now < player.skillActiveUntil) {
+      ctx.save();
+      ctx.rotate(time * 6);
+      ctx.strokeStyle = '#facc15';
+      ctx.lineWidth = 3;
+      for (let i = 0; i < 4; i++) {
+        const a = (i * Math.PI) / 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, 26, a, a + 0.8);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
 
     // Shadow on floor
     ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
@@ -81,22 +140,30 @@ export class SpriteModels {
       this.drawGuerrero(ctx, player, walkBob, walkTilt, time, isMoving);
     } else if (player.classType === 'CAZADOR') {
       this.drawCazador(ctx, player, walkBob, walkTilt, time, isMoving);
+    } else if (player.classType === 'PICARO') {
+      this.drawPicaro(ctx, player, walkBob, walkTilt, time, isMoving);
     } else {
       this.drawMago(ctx, player, walkBob, walkTilt, time, isMoving);
     }
 
     ctx.restore();
 
-    // Overhead HUD: Name & Health Bar (Gothic Frame)
+    // Overhead HUD: Name, Weapon Level, Combo & Health Bar
+    const comboBadge = player.combo >= 3 ? ` 🔥x${player.combo}` : '';
     ctx.fillStyle = isLocal ? '#f59e0b' : '#d6d3d1';
     ctx.font = 'bold 11px "Cinzel", serif';
     ctx.textAlign = 'center';
     ctx.shadowColor = '#000000';
     ctx.shadowBlur = 4;
-    ctx.fillText(`${player.name} ${player.isHost ? '👑' : ''}`, 0, -28);
+    ctx.fillText(`${player.name}${player.isHost ? ' 👑' : ''}${comboBadge}`, 0, -29);
     ctx.shadowBlur = 0;
 
     this.drawGothicHealthBar(ctx, 0, -20, 38, 5, player.currentHp, player.maxHp);
+    if (player.shieldHp > 0) {
+      const shieldPct = Math.min(1, player.shieldHp / 100);
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(-19, -24, 38 * shieldPct, 2.5);
+    }
 
     ctx.restore();
   }
@@ -490,6 +557,81 @@ export class SpriteModels {
     ctx.restore();
   }
 
+  private static drawPicaro(
+    ctx: CanvasRenderingContext2D,
+    player: PlayerEntity,
+    bob: number,
+    tilt: number,
+    time: number,
+    isMoving: boolean
+  ) {
+    ctx.translate(0, bob);
+    ctx.rotate(tilt);
+
+    const isAttacking = Date.now() - player.lastAttackAt < 130;
+    const slashProg = isAttacking ? (Date.now() - player.lastAttackAt) / 130 : 1;
+
+    // Flowing Shadow Scarf
+    const scarfWave = isMoving ? Math.sin(time * 16) * 5 : Math.sin(time * 4) * 2;
+    ctx.fillStyle = '#064e3b';
+    ctx.beginPath();
+    ctx.moveTo(-6, -4);
+    ctx.lineTo(-24, -8 + scarfWave);
+    ctx.lineTo(-22, 4 + scarfWave);
+    ctx.lineTo(-6, 4);
+    ctx.closePath();
+    ctx.fill();
+
+    // Midnight Leather Assassin Tunic
+    ctx.fillStyle = '#18181b';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 10, 8.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Dark Hooded Cowl & Mask
+    ctx.fillStyle = '#09090b';
+    ctx.beginPath();
+    ctx.arc(2, 0, 7.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Glowing Emerald Viper Eyes
+    ctx.fillStyle = '#10b981';
+    ctx.fillRect(5, -3, 2.5, 2);
+    ctx.fillRect(5, 1.5, 2.5, 2);
+
+    // Twin Poisoned Daggers (Left & Right hands)
+    const lunge = isAttacking ? Math.sin(slashProg * Math.PI) * 8 : 0;
+    ctx.fillStyle = '#10b981';
+    ctx.strokeStyle = '#d1fae5';
+    ctx.lineWidth = 1;
+
+    // Right Dagger
+    ctx.beginPath();
+    ctx.moveTo(8 + lunge, 5);
+    ctx.lineTo(22 + lunge, 7);
+    ctx.lineTo(10 + lunge, 9);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Left Dagger
+    ctx.beginPath();
+    ctx.moveTo(8 + lunge * 0.7, -5);
+    ctx.lineTo(22 + lunge * 0.7, -7);
+    ctx.lineTo(10 + lunge * 0.7, -9);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    if (isAttacking) {
+      ctx.strokeStyle = 'rgba(16, 185, 129, 0.85)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(6, 0, 26, -Math.PI / 3, Math.PI / 3);
+      ctx.stroke();
+    }
+  }
+
   /* ========================================================================= */
   /*                             ENEMIES & MONSTERS                            */
   /* ========================================================================= */
@@ -528,48 +670,231 @@ export class SpriteModels {
     ctx.save();
     ctx.translate(enemy.x, enemy.y);
 
+    const now = Date.now();
+
+    // 1. Elite Champion Golden/Crimson Floor Runic Ring
+    if (enemy.isElite) {
+      ctx.save();
+      ctx.rotate(time * 2.5);
+      ctx.strokeStyle = 'rgba(245, 158, 11, 0.7)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.arc(0, 4, enemy.radius + 8, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     // White flash on damage hit
-    const isFlashing = enemy.flashUntil && Date.now() < enemy.flashUntil;
+    const isFlashing = enemy.flashUntil && now < enemy.flashUntil;
     if (isFlashing) {
       ctx.filter = 'brightness(2.5)';
     }
 
     if (enemy.isBoss) {
       this.drawBossDirector(ctx, enemy, time);
-    } else if (enemy.type === 'SLIME') {
+    } else if (enemy.type === 'SLIME' || enemy.type === 'MINI_SLIME') {
       this.drawSlime(ctx, enemy, time);
     } else if (enemy.type === 'ESQUELETO') {
       this.drawEsqueleto(ctx, enemy, time);
+    } else if (enemy.type === 'GOLEM') {
+      this.drawGolem(ctx, enemy, time);
+    } else if (enemy.type === 'NIGROMANTE') {
+      this.drawNigromante(ctx, enemy, time);
     } else {
       this.drawMurcielago(ctx, enemy, time);
+    }
+
+    // Elemental Status Overlays (Burn, Poison, Chill, Stun)
+    let statusIcons = '';
+    if (enemy.burnUntil && now < enemy.burnUntil) statusIcons += '🔥';
+    if (enemy.poisonUntil && now < enemy.poisonUntil) statusIcons += '☠️';
+    if (enemy.chillUntil && now < enemy.chillUntil) statusIcons += '❄️';
+    if (enemy.stunUntil && now < enemy.stunUntil) statusIcons += '💫';
+
+    if (statusIcons || enemy.isElite) {
+      ctx.fillStyle = '#fde047';
+      ctx.font = 'bold 10px "Cinzel", serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(
+        `${enemy.isElite ? `★ ${enemy.eliteModifier || 'ÉLITE'} ` : ''}${statusIcons}`,
+        0,
+        -enemy.radius - 18
+      );
     }
 
     ctx.restore();
   }
 
+  private static drawGolem(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
+    const isCharging = enemy.aiState === 'CHARGING';
+    const heave = Math.sin(time * 5) * 2;
+
+    // Heavy shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.beginPath();
+    ctx.ellipse(0, 22, 26, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Massive Chiseled Basalt Torso
+    ctx.fillStyle = '#292524';
+    ctx.strokeStyle = isCharging ? '#ea580c' : '#57534e';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.roundRect(-22, -22 + heave, 44, 42, [8]);
+    ctx.fill();
+    ctx.stroke();
+
+    // Glowing Magma Core Cracks
+    ctx.strokeStyle = isCharging ? '#fef08a' : '#ea580c';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-10, -8 + heave);
+    ctx.lineTo(0, 4 + heave);
+    ctx.lineTo(12, -6 + heave);
+    ctx.moveTo(0, 4 + heave);
+    ctx.lineTo(0, 14 + heave);
+    ctx.stroke();
+
+    // Visor Eyes
+    ctx.fillStyle = '#f97316';
+    ctx.fillRect(-9, -15 + heave, 6, 3);
+    ctx.fillRect(3, -15 + heave, 6, 3);
+
+    this.drawGothicHealthBar(ctx, 0, -enemy.radius - 10, 46, 5, enemy.currentHp, enemy.maxHp);
+  }
+
+  private static drawNigromante(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
+    const floatY = Math.sin(time * 4 + enemy.x) * 3.5;
+    const isCharging = enemy.aiState === 'CHARGING';
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.beginPath();
+    ctx.ellipse(0, 18, 14, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Occult Void Aura
+    if (isCharging) {
+      ctx.strokeStyle = 'rgba(168, 85, 247, 0.7)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, floatY, 24, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Hooded Void Cloak
+    ctx.fillStyle = '#3b0764';
+    ctx.strokeStyle = '#a855f7';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, -18 + floatY);
+    ctx.lineTo(-15, 14 + floatY);
+    ctx.lineTo(15, 14 + floatY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Skull Mask & Glowing Purple Eyes
+    ctx.fillStyle = '#e2e8f0';
+    ctx.beginPath();
+    ctx.arc(0, -7 + floatY, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#c084fc';
+    ctx.fillRect(-3, -8 + floatY, 2, 2);
+    ctx.fillRect(1, -8 + floatY, 2, 2);
+
+    this.drawGothicHealthBar(ctx, 0, -enemy.radius - 10, 36, 4, enemy.currentHp, enemy.maxHp);
+  }
+
   /**
-   * Floating ruby heart pickup with glowing aura and floating animation.
+   * Renders Pickups: Ruby Hearts, Golden Coins, Shield Orbs, and Frenzy Orbs!
    */
   public static drawHeartPickup(ctx: CanvasRenderingContext2D, heart: HeartPickup, time: number) {
-    const floatY = Math.sin(time * 4 + heart.x) * 3;
+    const floatY = Math.sin(time * 4.5 + heart.x) * 3;
+    const pType = heart.type || 'HEART';
 
     ctx.save();
     ctx.translate(heart.x, heart.y + floatY);
 
-    // Floor shadow
     ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
     ctx.beginPath();
-    ctx.ellipse(0, 12 - floatY * 0.5, 9, 4, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 11 - floatY * 0.5, 8, 3.5, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Red aura glow
+    if (pType === 'GOLD') {
+      const spinWidth = Math.max(2.5, Math.abs(Math.cos(time * 5 + heart.x)) * 8);
+      ctx.fillStyle = 'rgba(250, 204, 21, 0.22)';
+      ctx.beginPath();
+      ctx.arc(0, 0, 12, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#facc15';
+      ctx.strokeStyle = '#b45309';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, spinWidth, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#fde047';
+      ctx.font = 'bold 9px "Cinzel", serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`+${heart.healAmount} 🪙`, 0, -13);
+      ctx.restore();
+      return;
+    }
+
+    if (pType === 'SHIELD_ORB') {
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.25)';
+      ctx.beginPath();
+      ctx.arc(0, 0, 13, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#0284c7';
+      ctx.strokeStyle = '#bae6fd';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, 7.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#7dd3fc';
+      ctx.font = 'bold 9px "Cinzel", serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('+ESCUDO', 0, -13);
+      ctx.restore();
+      return;
+    }
+
+    if (pType === 'FRENZY_ORB') {
+      ctx.fillStyle = 'rgba(168, 85, 247, 0.3)';
+      ctx.beginPath();
+      ctx.arc(0, 0, 14, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#a855f7';
+      ctx.strokeStyle = '#fde047';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#e9d5ff';
+      ctx.font = 'bold 9px "Cinzel", serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('⚡ FRENESÍ', 0, -13);
+      ctx.restore();
+      return;
+    }
+
+    // Default: Ruby Heart Shape
     const pulse = Math.sin(time * 6 + heart.y) * 2;
     ctx.fillStyle = 'rgba(239, 68, 68, 0.25)';
     ctx.beginPath();
     ctx.arc(0, -2, 12 + pulse, 0, Math.PI * 2);
     ctx.fill();
 
-    // Ruby Heart Shape
     ctx.fillStyle = '#dc2626';
     ctx.strokeStyle = '#7f1d1d';
     ctx.lineWidth = 1.5;
@@ -583,17 +908,15 @@ export class SpriteModels {
     ctx.fill();
     ctx.stroke();
 
-    // Specular shine
     ctx.fillStyle = '#fecaca';
     ctx.beginPath();
     ctx.arc(-2.5, -7.5, 1.5, 0, Math.PI * 2);
     ctx.fill();
 
-    // +20 HP label
     ctx.fillStyle = '#fca5a5';
     ctx.font = 'bold 9px "Cinzel", serif';
     ctx.textAlign = 'center';
-    ctx.fillText('+20 HP', 0, -15);
+    ctx.fillText(`+${heart.healAmount} HP`, 0, -15);
 
     ctx.restore();
   }
@@ -1054,7 +1377,7 @@ export class SpriteModels {
   }
 
   /**
-   * Heavy double oak doors with iron bands and drop-portcullis.
+   * Heavy double oak doors with iron bands, drop-portcullis, and branching encounter portals.
    */
   public static drawDoor(
     ctx: CanvasRenderingContext2D,
@@ -1062,7 +1385,8 @@ export class SpriteModels {
     y: number,
     w: number,
     h: number,
-    isOpen: boolean
+    isOpen: boolean,
+    door?: DoorState
   ) {
     ctx.save();
 
@@ -1073,28 +1397,35 @@ export class SpriteModels {
     ctx.lineWidth = 3;
     ctx.strokeRect(x - 6, y - 6, w + 12, h + 12);
 
+    const enc = door?.encounterType || 'STANDARD';
+    const portalColor =
+      enc === 'ELITE' ? '#dc2626' : enc === 'SANCTUARY' ? '#10b981' : enc === 'BOSS' ? '#f97316' : '#d97706';
+
     if (isOpen) {
-      // Golden Portal to Next Chamber
       ctx.fillStyle = '#0c0a09';
       ctx.fillRect(x, y, w, h);
 
-      // Golden light spilling out
-      ctx.fillStyle = '#d97706';
-      ctx.shadowColor = '#f59e0b';
-      ctx.shadowBlur = 16;
+      ctx.fillStyle = portalColor;
+      ctx.shadowColor = portalColor;
+      ctx.shadowBlur = 18;
       ctx.fillRect(x + 6, y + 4, w - 12, h - 8);
       ctx.shadowBlur = 0;
 
       ctx.fillStyle = '#fef3c7';
-      ctx.font = 'bold 11px "Cinzel", serif';
+      ctx.font = 'bold 10px "Cinzel", serif';
       ctx.textAlign = 'center';
-      ctx.fillText('AVANZAR ⬆', x + w / 2, y + h / 2 + 4);
+      const label = door?.label || 'AVANZAR ⬆';
+      if (door?.direction === 'EAST') {
+        ctx.fillText(label, x - 38, y + h / 2 + 4);
+      } else if (door?.direction === 'WEST') {
+        ctx.fillText(label, x + w + 38, y + h / 2 + 4);
+      } else {
+        ctx.fillText(label, x + w / 2, y + h + 14);
+      }
     } else {
-      // Heavy Oak Doors & Iron Portcullis Spikes
       ctx.fillStyle = '#292524';
       ctx.fillRect(x, y, w, h);
 
-      // Wood Grain Lines
       ctx.strokeStyle = '#1c1917';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -1102,7 +1433,6 @@ export class SpriteModels {
       ctx.lineTo(x + w / 2, y + h);
       ctx.stroke();
 
-      // Iron Portcullis Spikes
       ctx.strokeStyle = '#78716c';
       ctx.lineWidth = 3.5;
       for (let barX = x + 12; barX < x + w - 4; barX += 16) {
@@ -1111,7 +1441,6 @@ export class SpriteModels {
         ctx.lineTo(barX, y + h);
         ctx.stroke();
 
-        // Spike tip
         ctx.fillStyle = '#991b1b';
         ctx.beginPath();
         ctx.moveTo(barX - 3, y + h - 8);
@@ -1119,6 +1448,214 @@ export class SpriteModels {
         ctx.lineTo(barX + 3, y + h - 8);
         ctx.fill();
       }
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * Renders the Altar of Pacts & Armory where players upgrade weapons and sign AI Pacts.
+   */
+  public static drawAltar(ctx: CanvasRenderingContext2D, altar: AltarEntity, time: number) {
+    ctx.save();
+    ctx.translate(altar.x, altar.y);
+
+    const pulse = Math.sin(time * 4) * 3;
+
+    // Mystical Purple/Gold Floor Halo
+    ctx.fillStyle = altar.pact.used ? 'rgba(120, 113, 108, 0.15)' : 'rgba(168, 85, 247, 0.22)';
+    ctx.beginPath();
+    ctx.arc(0, 0, 48 + pulse, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Stone Pedestal
+    ctx.fillStyle = '#1c1917';
+    ctx.strokeStyle = '#a855f7';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(-24, -14, 48, 30, [6]);
+    ctx.fill();
+    ctx.stroke();
+
+    // Floating Cursed Contract Scroll & Anvil Icon
+    ctx.fillStyle = '#f59e0b';
+    ctx.font = 'bold 18px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(altar.pact.used ? '⚒️' : '⚖️', 0, 4 + pulse * 0.5);
+
+    ctx.fillStyle = '#e9d5ff';
+    ctx.font = 'bold 10px "Cinzel", serif';
+    ctx.shadowColor = '#000000';
+    ctx.shadowBlur = 4;
+    ctx.fillText('ALTAR & ARMERÍA [F]', 0, -24 + pulse * 0.4);
+    ctx.shadowBlur = 0;
+
+    ctx.restore();
+  }
+
+  /**
+   * Renders Interactive Barrels (Explosive, Frost, Toxic).
+   */
+  public static drawBarrel(ctx: CanvasRenderingContext2D, barrel: BarrelEntity, time: number) {
+    ctx.save();
+    ctx.translate(barrel.x, barrel.y);
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    ctx.beginPath();
+    ctx.ellipse(0, 14, 16, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const mainColor =
+      barrel.type === 'FROST' ? '#0284c7' : barrel.type === 'TOXIC' ? '#15803d' : '#991b1b';
+    const rimColor =
+      barrel.type === 'FROST' ? '#38bdf8' : barrel.type === 'TOXIC' ? '#4ade80' : '#f97316';
+
+    // Barrel Body
+    ctx.fillStyle = mainColor;
+    ctx.strokeStyle = '#1c1917';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(-14, -16, 28, 32, [6]);
+    ctx.fill();
+    ctx.stroke();
+
+    // Iron Hoops
+    ctx.fillStyle = '#44403c';
+    ctx.fillRect(-15, -10, 30, 4);
+    ctx.fillRect(-15, 6, 30, 4);
+
+    // Glowing Hazard Emblem
+    const pulse = Math.sin(time * 7 + barrel.x) * 1.5;
+    ctx.fillStyle = rimColor;
+    ctx.beginPath();
+    ctx.arc(0, 0, 5 + pulse * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  /**
+   * Renders Environmental & Skill Hazards (Lava, Poison Cloud, Spike Traps, Arcane Vortex, Meteor Strike, Bear Trap, Decoy Bomb).
+   */
+  public static drawHazard(ctx: CanvasRenderingContext2D, h: HazardZone, time: number) {
+    ctx.save();
+    ctx.translate(h.x, h.y);
+
+    if (h.type === 'LAVA') {
+      const bubble = Math.sin(time * 5 + h.x) * 3;
+      ctx.fillStyle = 'rgba(220, 38, 38, 0.38)';
+      ctx.beginPath();
+      ctx.arc(0, 0, h.radius + bubble, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = '#f97316';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, h.radius * 0.75, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (h.type === 'POISON_CLOUD') {
+      const swirl = Math.cos(time * 4 + h.y) * 4;
+      ctx.fillStyle = 'rgba(22, 163, 74, 0.28)';
+      ctx.beginPath();
+      ctx.arc(0, 0, h.radius + swirl, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (h.type === 'SPIKE_TRAP') {
+      // Metallic floor plate
+      ctx.fillStyle = '#1c1917';
+      ctx.strokeStyle = h.active ? '#ef4444' : '#57534e';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, h.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Spikes (retracted holes vs impaling steel blades)
+      const positions = [
+        { x: -12, y: -12 },
+        { x: 12, y: -12 },
+        { x: 0, y: 0 },
+        { x: -12, y: 12 },
+        { x: 12, y: 12 },
+      ];
+      for (const pos of positions) {
+        if (h.active) {
+          ctx.fillStyle = '#e2e8f0';
+          ctx.beginPath();
+          ctx.moveTo(pos.x - 5, pos.y + 4);
+          ctx.lineTo(pos.x, pos.y - 12);
+          ctx.lineTo(pos.x + 5, pos.y + 4);
+          ctx.closePath();
+          ctx.fill();
+          ctx.fillStyle = '#dc2626';
+          ctx.fillRect(pos.x - 1.5, pos.y - 12, 3, 5);
+        } else {
+          ctx.fillStyle = '#090807';
+          ctx.beginPath();
+          ctx.arc(pos.x, pos.y, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    } else if (h.type === 'ARCANE_VORTEX') {
+      ctx.rotate(time * 6);
+      ctx.fillStyle = 'rgba(147, 51, 234, 0.22)';
+      ctx.beginPath();
+      ctx.arc(0, 0, h.radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2.5;
+      for (let i = 0; i < 3; i++) {
+        const a = (i * Math.PI * 2) / 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, h.radius * 0.65, a, a + 1.2);
+        ctx.stroke();
+      }
+    } else if (h.type === 'METEOR_STRIKE') {
+      const prog = Math.min(1, (Date.now() - h.createdAt) / h.durationMs);
+      ctx.fillStyle = 'rgba(239, 68, 68, 0.18)';
+      ctx.beginPath();
+      ctx.arc(0, 0, h.radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, h.radius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Inner filling danger circle
+      ctx.fillStyle = 'rgba(220, 38, 38, 0.45)';
+      ctx.beginPath();
+      ctx.arc(0, 0, h.radius * prog, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (h.type === 'DECOY_BOMB') {
+      const pulse = Math.sin(time * 18) * 3;
+      ctx.strokeStyle = 'rgba(16, 185, 129, 0.5)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.arc(0, 0, h.radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = '#10b981';
+      ctx.beginPath();
+      ctx.arc(0, 0, 12 + pulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 9px "Cinzel", serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('CLON EXPLOSIVO', 0, -18);
+    } else if (h.type === 'BEAR_TRAP') {
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, 14, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#f97316';
+      ctx.beginPath();
+      ctx.arc(0, 0, 5, 0, Math.PI * 2);
+      ctx.fill();
     }
 
     ctx.restore();

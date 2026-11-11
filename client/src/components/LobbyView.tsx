@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { PlayerClass, GameWorldState, CLASS_CONFIGS } from '../types';
-import { Users, Copy, Check, Play, Shield, Crosshair, Sparkles } from 'lucide-react';
+import { Users, Copy, Check, Play, Bot, Trash2, Sparkles } from 'lucide-react';
 import { sfx } from '../audio/sfx';
 
 interface Props {
@@ -8,6 +8,9 @@ interface Props {
   localPlayerId: string;
   onCreateRoom: (name: string, classType: PlayerClass) => void;
   onJoinRoom: (code: string, name: string, classType: PlayerClass) => void;
+  onChangeClass: (classType: PlayerClass) => void;
+  onAddBot: (classType?: PlayerClass) => void;
+  onRemoveBots: () => void;
   onStartGame: () => void;
   isLoading: boolean;
   errorMessage: string | null;
@@ -18,6 +21,9 @@ export const LobbyView: React.FC<Props> = ({
   localPlayerId,
   onCreateRoom,
   onJoinRoom,
+  onChangeClass,
+  onAddBot,
+  onRemoveBots,
   onStartGame,
   isLoading,
   errorMessage,
@@ -49,39 +55,52 @@ export const LobbyView: React.FC<Props> = ({
     name: string;
     icon: string;
     description: string;
-    weapon: string;
     role: string;
   }> = [
     {
       id: 'GUERRERO',
       name: 'Caballero Descafeinado',
       icon: '🛡️',
-      role: 'Tanque / Melé Pesado',
-      weapon: 'Zweihänder de Hierro Forjado',
-      description: 'Armadura pesada (160 HP), espadazo amplio en arco y gran empuje.',
+      role: 'Tanque / Reflejo Sísmico',
+      description: 'Espadazo que destruye proyectiles. Habilidad: Onda Sísmica que aturde y refleja balas.',
     },
     {
       id: 'CAZADOR',
       name: 'Cazador Desesperado',
       icon: '🏹',
-      role: 'Tirador Ágil / Larga Distancia',
-      weapon: 'Ballesta de Precisión con Virotes',
-      description: 'Velocidad de carrera (100 HP) y virotes rápidos que rebotan.',
+      role: 'Tirador / Trampas',
+      description: 'Virotes rápidos con rebote. Habilidad: Salva de 5 flechas perforantes + Trampa explosiva.',
     },
     {
       id: 'MAGO',
       name: 'Mago Piromaniaco',
       icon: '🔮',
-      role: 'Daño en Área / Proyectil Ígneo',
-      weapon: 'Báculo de Roble y Orbes Igneos',
-      description: 'Menos salud (80 HP), pero sus orbes explotan en área con daño masivo.',
+      role: 'Explosión Ígnea / Control',
+      description: 'Orbes de fuego que explotan en área y queman. Habilidad: Agujero Negro gravitatorio.',
+    },
+    {
+      id: 'PICARO',
+      name: 'Asesino de las Sombras',
+      icon: '🗡️',
+      role: 'Velocidad / Crítico Venenoso',
+      description: 'Dagas dobles envenenadas y ultra veloz. Habilidad: Clon explosivo e invisibilidad crítica.',
     },
   ];
 
+  const handleSelectClass = (clsId: PlayerClass) => {
+    setSelectedClass(clsId);
+    sfx.playShoot();
+    if (isInsideRoom) {
+      onChangeClass(clsId);
+    }
+  };
+
+  const playerCount = world ? Object.keys(world.players).length : 0;
+  const hasBots = world ? Object.values(world.players).some(p => p.isBot) : false;
+
   return (
     <div className="fixed inset-0 bg-[#0c0a09] flex items-center justify-center p-4 z-40 overflow-y-auto">
-      {/* Heavy Medieval Iron Frame */}
-      <div className="relative max-w-xl w-full bg-[#141210] border-2 border-[#44403c] rounded-xl p-6 shadow-2xl flex flex-col items-center">
+      <div className="relative max-w-2xl w-full bg-[#141210] border-2 border-[#44403c] rounded-xl p-6 shadow-2xl flex flex-col items-center">
         {/* Stone corner rivets */}
         <div className="absolute top-2 left-2 w-2 h-2 rounded-full bg-[#78716c]"></div>
         <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#78716c]"></div>
@@ -92,14 +111,14 @@ export const LobbyView: React.FC<Props> = ({
         <div className="flex items-center gap-2 mb-1">
           <span className="text-2xl">🏰</span>
           <span className="text-[10px] uppercase font-cinzel font-bold tracking-widest text-[#d97706] bg-[#1c1917] border border-[#78350f] px-2.5 py-0.5 rounded">
-            DIRECTOR CON MINIMAX M3.1 FLASH
+            DIRECTOR IA EN VIVO • SINERGIAS ELEMENTALES • CO-OP
           </span>
         </div>
         <h1 className="text-2xl md:text-3xl font-black font-cinzel tracking-wider text-[#f5f5f4] uppercase text-center">
           CALABOZO MUTANTE
         </h1>
-        <p className="text-xs text-[#a8a29e] font-serif italic mt-0.5 mb-5 text-center">
-          Roguelite cooperativo donde el Director muta las físicas de las cámaras en tiempo real.
+        <p className="text-xs text-[#a8a29e] font-serif italic mt-0.5 mb-4 text-center">
+          Roguelite cooperativo donde el Director IA muta las físicas, negocia pactos malditos y desata intervenciones en tiempo real.
         </p>
 
         {errorMessage && (
@@ -111,7 +130,6 @@ export const LobbyView: React.FC<Props> = ({
         {!isInsideRoom ? (
           /* ================= STEP 1: CREATE OR JOIN ================= */
           <div className="w-full flex flex-col gap-3.5">
-            {/* Player Name Input */}
             <div>
               <label className="block text-[11px] font-cinzel font-bold text-[#d6d3d1] uppercase mb-1">
                 Nombre de tu Héroe
@@ -126,40 +144,43 @@ export const LobbyView: React.FC<Props> = ({
               />
             </div>
 
-            {/* Class Selection */}
+            {/* 4 Class Selection Grid */}
             <div>
               <label className="block text-[11px] font-cinzel font-bold text-[#d6d3d1] uppercase mb-1.5">
-                Gremio de Aventurero
+                Elige tu Clase y Habilidad Especial
               </label>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {CLASSES.map(cls => {
                   const isSelected = selectedClass === cls.id;
                   const stats = CLASS_CONFIGS[cls.id];
                   return (
                     <button
                       key={cls.id}
-                      onClick={() => {
-                        setSelectedClass(cls.id);
-                        sfx.playShoot();
-                      }}
+                      onClick={() => handleSelectClass(cls.id)}
                       className={`text-left p-2.5 rounded border transition-all ${
                         isSelected
                           ? 'bg-[#1c1917] border-[#d97706] shadow-md shadow-black'
                           : 'bg-[#0c0a09] border-[#292524] hover:border-[#44403c]'
                       }`}
                     >
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <span className="text-lg">{cls.icon}</span>
-                        <div className="font-bold text-xs font-cinzel text-[#f5f5f4] leading-tight">
-                          {cls.name}
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-lg">{cls.icon}</span>
+                          <span className="font-bold text-xs font-cinzel text-[#f5f5f4]">
+                            {cls.name}
+                          </span>
                         </div>
+                        <span className="text-[9px] font-cinzel text-[#d97706] bg-[#141210] px-1.5 py-0.5 rounded border border-[#292524]">
+                          {cls.role}
+                        </span>
                       </div>
                       <div className="text-[10px] text-[#a8a29e] font-serif leading-tight mb-2">
                         {cls.description}
                       </div>
                       <div className="text-[9px] font-cinzel text-[#78716c] border-t border-[#292524] pt-1 flex justify-between">
                         <span>❤️ {stats.maxHp} HP</span>
-                        <span>⚡ {stats.attackDamage} Daño</span>
+                        <span>⚔️ {stats.attackDamage} Daño</span>
+                        <span className="text-amber-400">✨ {stats.skillName}</span>
                       </div>
                     </button>
                   );
@@ -227,12 +248,12 @@ export const LobbyView: React.FC<Props> = ({
           </div>
         ) : (
           /* ================= STEP 2: LOBBY ROOM WAITING ================= */
-          <div className="w-full flex flex-col gap-3.5">
+          <div className="w-full flex flex-col gap-3">
             {/* Room Code Badge */}
             <div className="bg-[#0c0a09] border border-[#44403c] rounded-lg p-3 flex items-center justify-between">
               <div>
                 <span className="text-[9px] font-cinzel text-[#a8a29e] uppercase tracking-wider block">
-                  CÓDIGO DEL CALABOZO
+                  CÓDIGO DEL CALABOZO (COMPARTE CON AMIGOS)
                 </span>
                 <span className="text-2xl font-black font-cinzel tracking-widest text-[#d97706]">
                   {world.code}
@@ -247,15 +268,62 @@ export const LobbyView: React.FC<Props> = ({
               </button>
             </div>
 
-            {/* Squad Members */}
+            {/* Quick Class Switcher inside Lobby */}
+            <div>
+              <span className="text-[10px] font-cinzel text-[#a8a29e] uppercase block mb-1">
+                CAMBIAR TU CLASE EN VIVO:
+              </span>
+              <div className="grid grid-cols-4 gap-1.5">
+                {CLASSES.map(cls => {
+                  const isMine = localPlayer?.classType === cls.id;
+                  return (
+                    <button
+                      key={cls.id}
+                      onClick={() => handleSelectClass(cls.id)}
+                      className={`py-1.5 px-2 rounded border text-[10px] font-cinzel font-bold flex items-center justify-center gap-1 transition ${
+                        isMine
+                          ? 'bg-[#78350f] border-[#f59e0b] text-[#fef3c7]'
+                          : 'bg-[#0c0a09] border-[#292524] text-[#a8a29e] hover:border-[#57534e]'
+                      }`}
+                    >
+                      <span>{cls.icon}</span>
+                      <span className="truncate">{cls.id}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Squad Members + AI Bot Companions */}
             <div>
               <div className="text-[11px] font-cinzel text-[#a8a29e] mb-1.5 flex items-center justify-between">
                 <span className="flex items-center gap-1">
-                  <Users size={13} /> ESCUADRA (MÁXIMO 4):
+                  <Users size={13} /> ESCUADRA ({playerCount} / 4):
                 </span>
-                <span className="text-[#d97706] font-bold">
-                  {Object.keys(world.players).length} / 4
-                </span>
+                {isHost && (
+                  <div className="flex items-center gap-1.5">
+                    {playerCount < 4 && (
+                      <button
+                        onClick={() => {
+                          sfx.playHeal();
+                          onAddBot();
+                        }}
+                        className="flex items-center gap-1 px-2 py-0.5 bg-[#1e1b4b] hover:bg-[#312e81] text-indigo-200 border border-indigo-500/60 rounded text-[10px] font-cinzel font-bold transition"
+                      >
+                        <Bot size={12} /> + GUARDIÁN IA
+                      </button>
+                    )}
+                    {hasBots && (
+                      <button
+                        onClick={() => onRemoveBots()}
+                        className="flex items-center gap-1 px-2 py-0.5 bg-[#450a0a] hover:bg-[#7f1d1d] text-rose-200 border border-rose-700/60 rounded text-[10px] font-cinzel transition"
+                        title="Quitar compañeros IA"
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -265,14 +333,20 @@ export const LobbyView: React.FC<Props> = ({
                     className="flex items-center gap-2.5 bg-[#0c0a09] border border-[#292524] p-2 rounded"
                   >
                     <span className="text-lg">
-                      {p.classType === 'GUERRERO' ? '🛡️' : p.classType === 'CAZADOR' ? '🏹' : '🔮'}
+                      {p.classType === 'GUERRERO'
+                        ? '🛡️'
+                        : p.classType === 'CAZADOR'
+                        ? '🏹'
+                        : p.classType === 'PICARO'
+                        ? '🗡️'
+                        : '🔮'}
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="text-xs font-cinzel font-bold text-[#f5f5f4] truncate flex items-center gap-1">
                         {p.name} {p.isHost && '👑'}
                       </div>
                       <div className="text-[10px] text-[#78716c] font-cinzel">
-                        {p.classType} • {p.id === localPlayerId ? 'Tú' : 'Aliado'}
+                        {p.classType} • {p.id === localPlayerId ? 'Tú' : p.isBot ? 'Compañero IA' : 'Aliado'}
                       </div>
                     </div>
                   </div>
@@ -280,12 +354,15 @@ export const LobbyView: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* Controls Guide */}
+            {/* Controls & New Mechanics Guide */}
             <div className="bg-[#0c0a09] border border-[#292524] rounded-lg p-2.5 text-[11px] font-cinzel text-[#a8a29e] leading-relaxed">
-              <span className="text-[#d97706] font-bold block mb-0.5">CONTROLES DE COMBATE:</span>
-              <div>• <strong>W, A, S, D</strong>: Moverse con inercia</div>
-              <div>• <strong>RATÓN</strong>: Apuntar en 360° • <strong>CLIC</strong>: Atacar</div>
-              <div>• <strong>ESPACIO / SHIFT</strong>: Dash evasivo con invulnerabilidad</div>
+              <span className="text-[#d97706] font-bold flex items-center gap-1 mb-0.5">
+                <Sparkles size={12} /> CONTROLES & MECÁNICAS AVANZADAS:
+              </span>
+              <div>• <strong>WASD</strong>: Moverse • <strong>CLIC IZQ</strong>: Ataque Básico • <strong>ESPACIO / SHIFT</strong>: Dash Invulnerable</div>
+              <div>• <strong>CLIC DERECHO o [E]</strong>: Habilidad Especial de Clase (Reflejo, Trampa, Agujero Negro, Clon)</div>
+              <div>• <strong>TECLA [G]</strong>: Ping Táctico Cooperativo • <strong>SINERGIAS</strong>: Combina Fuego, Hielo, Veneno y Rayo</div>
+              <div>• <strong>CO-OP</strong>: Párate en el círculo de un aliado caído para revivirlo • Usa el <strong>Altar del Pacto</strong> al limpiar la sala</div>
             </div>
 
             {/* Start Button */}

@@ -21,9 +21,30 @@ export interface GhostTrail {
   alpha: number;
 }
 
+export interface ShockwaveRing {
+  x: number;
+  y: number;
+  currentRadius: number;
+  maxRadius: number;
+  color: string;
+  alpha: number;
+  lineWidth: number;
+}
+
+export interface LightningArc {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  color: string;
+  alpha: number;
+}
+
 export class ParticleSystem {
   private particles: Particle[] = [];
   private ghostTrails: GhostTrail[] = [];
+  private shockwaves: ShockwaveRing[] = [];
+  private lightningArcs: LightningArc[] = [];
 
   public emitDustPuff(x: number, y: number, count = 3) {
     for (let i = 0; i < count; i++) {
@@ -102,24 +123,48 @@ export class ParticleSystem {
     }
   }
 
-  public emitExplosion(x: number, y: number, radius = 50) {
-    for (let i = 0; i < 28; i++) {
+  public emitExplosion(x: number, y: number, radius = 65, color = '#f97316') {
+    this.addShockwave(x, y, radius, color, 4);
+    for (let i = 0; i < 26; i++) {
       const angle = Math.random() * Math.PI * 2;
-      const speed = 80 + Math.random() * (radius * 4);
-      const isFire = Math.random() > 0.4;
+      const speed = 70 + Math.random() * (radius * 3.5);
+      const isSecondary = Math.random() > 0.45;
       this.particles.push({
         x,
         y,
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed,
-        radius: 4 + Math.random() * 6,
-        color: isFire ? '#f97316' : '#fbbf24',
+        radius: 3.5 + Math.random() * 5.5,
+        color: isSecondary ? color : '#fef08a',
         alpha: 1,
         life: 0,
         maxLife: 0.35 + Math.random() * 0.25,
         decay: 3.0,
       });
     }
+  }
+
+  public addShockwave(x: number, y: number, maxRadius = 120, color = '#f59e0b', lineWidth = 3.5) {
+    this.shockwaves.push({
+      x,
+      y,
+      currentRadius: 8,
+      maxRadius,
+      color,
+      alpha: 0.95,
+      lineWidth,
+    });
+  }
+
+  public addLightningArc(x1: number, y1: number, x2: number, y2: number, color = '#38bdf8') {
+    this.lightningArcs.push({
+      x1,
+      y1,
+      x2,
+      y2,
+      color,
+      alpha: 1.0,
+    });
   }
 
   public addGhostTrail(x: number, y: number, angle: number, radius: number, color: string) {
@@ -134,7 +179,6 @@ export class ParticleSystem {
   }
 
   public update(dt: number) {
-    // Update particles
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];
       p.life += dt;
@@ -142,14 +186,13 @@ export class ParticleSystem {
       p.y += p.vy * dt;
       p.vx *= 0.93;
       p.vy *= 0.93;
-      p.alpha = Math.max(0, 1 - (p.life / p.maxLife));
+      p.alpha = Math.max(0, 1 - p.life / p.maxLife);
 
       if (p.life >= p.maxLife) {
         this.particles.splice(i, 1);
       }
     }
 
-    // Update ghost trails
     for (let i = this.ghostTrails.length - 1; i >= 0; i--) {
       const g = this.ghostTrails[i];
       g.alpha -= dt * 4.0;
@@ -157,12 +200,65 @@ export class ParticleSystem {
         this.ghostTrails.splice(i, 1);
       }
     }
+
+    for (let i = this.shockwaves.length - 1; i >= 0; i--) {
+      const sw = this.shockwaves[i];
+      sw.currentRadius += (sw.maxRadius - sw.currentRadius) * Math.min(1, dt * 11);
+      sw.alpha -= dt * 2.6;
+      if (sw.alpha <= 0) {
+        this.shockwaves.splice(i, 1);
+      }
+    }
+
+    for (let i = this.lightningArcs.length - 1; i >= 0; i--) {
+      const arc = this.lightningArcs[i];
+      arc.alpha -= dt * 4.2;
+      if (arc.alpha <= 0) {
+        this.lightningArcs.splice(i, 1);
+      }
+    }
   }
 
   public render(ctx: CanvasRenderingContext2D) {
     ctx.save();
 
-    // Render ghost trails with fading phantom glow
+    // 1. Shockwave rings
+    for (const sw of this.shockwaves) {
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, sw.alpha);
+      ctx.strokeStyle = sw.color;
+      ctx.lineWidth = sw.lineWidth;
+      ctx.shadowColor = sw.color;
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.arc(sw.x, sw.y, sw.currentRadius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 2. Jagged Chain Lightning Arcs
+    for (const arc of this.lightningArcs) {
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, arc.alpha);
+      ctx.strokeStyle = arc.color;
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.moveTo(arc.x1, arc.y1);
+      const segments = 5;
+      for (let s = 1; s < segments; s++) {
+        const t = s / segments;
+        const jx = (Math.random() - 0.5) * 18;
+        const jy = (Math.random() - 0.5) * 18;
+        ctx.lineTo(arc.x1 + (arc.x2 - arc.x1) * t + jx, arc.y1 + (arc.y2 - arc.y1) * t + jy);
+      }
+      ctx.lineTo(arc.x2, arc.y2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 3. Ghost trails
     for (const g of this.ghostTrails) {
       ctx.save();
       ctx.globalAlpha = g.alpha;
@@ -175,7 +271,7 @@ export class ParticleSystem {
       ctx.restore();
     }
 
-    // Render particles (streaks or round embers)
+    // 4. Particles
     for (const p of this.particles) {
       ctx.save();
       ctx.globalAlpha = p.alpha;

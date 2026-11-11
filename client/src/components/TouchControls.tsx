@@ -1,13 +1,14 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Zap, Crosshair } from 'lucide-react';
+import { Zap, Crosshair, Sparkles } from 'lucide-react';
 
 interface Props {
   onMoveChange: (x: number, y: number) => void;
   onAttackChange: (isAttacking: boolean, angle: number) => void;
   onDash: () => void;
+  onSkill: () => void;
 }
 
-export const TouchControls: React.FC<Props> = ({ onMoveChange, onAttackChange, onDash }) => {
+export const TouchControls: React.FC<Props> = ({ onMoveChange, onAttackChange, onDash, onSkill }) => {
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const leftStickRef = useRef<HTMLDivElement>(null);
   const [leftThumb, setLeftThumb] = useState({ x: 0, y: 0, active: false });
@@ -66,7 +67,7 @@ export const TouchControls: React.FC<Props> = ({ onMoveChange, onAttackChange, o
 
   return (
     <div className="fixed inset-0 pointer-events-none z-30 flex justify-between items-end p-6 select-none">
-      {/* Left Joystick: Movement (Hammered Iron & Brass) */}
+      {/* Left Joystick: Movement */}
       <div
         ref={leftStickRef}
         onTouchStart={handleTouchStart}
@@ -80,15 +81,25 @@ export const TouchControls: React.FC<Props> = ({ onMoveChange, onAttackChange, o
         ></div>
       </div>
 
-      {/* Right Action Buttons */}
-      <div className="flex flex-col gap-4 pointer-events-auto">
-        {/* Dash Button */}
-        <button
-          onTouchStart={onDash}
-          className="w-14 h-14 rounded-full bg-[#1c1917] active:bg-[#292524] border-2 border-[#d97706] text-[#fef3c7] flex items-center justify-center shadow-lg active:scale-95 transition"
-        >
-          <Zap size={22} className="fill-[#d97706] text-[#d97706]" />
-        </button>
+      {/* Right Action Buttons: Active Skill, Dash & Attack */}
+      <div className="flex flex-col gap-3 pointer-events-auto items-center">
+        <div className="flex gap-3">
+          {/* Active Class Skill Button */}
+          <button
+            onTouchStart={onSkill}
+            className="w-14 h-14 rounded-full bg-purple-950 active:bg-purple-900 border-2 border-purple-400 text-purple-200 flex items-center justify-center shadow-lg active:scale-95 transition"
+          >
+            <Sparkles size={22} className="text-purple-300" />
+          </button>
+
+          {/* Dash Button */}
+          <button
+            onTouchStart={onDash}
+            className="w-14 h-14 rounded-full bg-[#1c1917] active:bg-[#292524] border-2 border-[#d97706] text-[#fef3c7] flex items-center justify-center shadow-lg active:scale-95 transition"
+          >
+            <Zap size={22} className="fill-[#d97706] text-[#d97706]" />
+          </button>
+        </div>
 
         {/* Attack Button */}
         <button

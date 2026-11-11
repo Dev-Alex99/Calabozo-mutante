@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: calabozo-mutante
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/status
+    envVars:
+      - key: NODE_VERSION
+        value: 22.13.0
+      - key: MINIMAX_API_KEY
+        sync: false
+      - key: MINIMAX_BASE_URL
+        value: https://api.minimax.io/v1
+      - key: MINIMAX_MODEL
+        value: MiniMax-M3.1-Flash
