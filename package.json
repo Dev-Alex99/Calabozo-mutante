@@ -1,0 +1,20 @@
+{
+  "name": "calabozo-mutante",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Videojuego de acción roguelite multijugador 2D con Director de Mazmorra en vivo potenciado por MiniMax M3.1 Flash",
+  "scripts": {
+    "postinstall": "npm install --include=dev --prefix server && npm install --include=dev --prefix client",
+    "install:all": "npm install && npm run postinstall",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "dev": "concurrently -k -p \"[{name}]\" -n \"SERVER,CLIENT\" -c \"magenta.bold,green.bold\" \"npm run dev:server\" \"npm run dev:client\"",
+    "build:client": "cd client && npm run build",
+    "build:server": "cd server && npm run build",
+    "build": "npm run build:client && npm run build:server",
+    "start": "cd server && npm start"
+  },
+  "dependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

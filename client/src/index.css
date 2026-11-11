@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    background-color: #030712;
+    color: #f3f4f6;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+}

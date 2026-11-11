@@ -1,0 +1,145 @@
+import { RoomMutation, Relic } from '../types.js';
+
+export const MOCK_MUTATIONS: RoomMutation[] = [
+  {
+    title: 'Pista de Hielo y Balística Ilegal',
+    description: 'El suelo está cubierto de nitrógeno líquido y las balas rebotan en las baldosas.',
+    directorRoast: 'A ver cómo mantienen el equilibrio con esos piececitos de campesino.',
+    frictionMultiplier: 0.18,
+    bulletBouncesBonus: 2,
+    enemySpeedMultiplier: 1.15,
+    playerDamageMultiplier: 1.0,
+    lowVisibility: false,
+    visibilityRadius: 900,
+    hazardType: 'NONE',
+  },
+  {
+    title: 'La Ciénaga Burocrática de Alquitrán',
+    description: 'El suelo espeso absorbe los pasos y una espesa niebla reduce la visibilidad.',
+    directorRoast: 'Corran todo lo que quieran, el barro les cobrará impuestos por metro cuadrado.',
+    frictionMultiplier: 0.5,
+    bulletBouncesBonus: 0,
+    enemySpeedMultiplier: 0.9,
+    playerDamageMultiplier: 1.1,
+    lowVisibility: true,
+    visibilityRadius: 280,
+    hazardType: 'POISON_SPORES',
+  },
+  {
+    title: 'El Salón de Baile Rebotador',
+    description: 'Paredes recubiertas de caucho mágico reforzado con resortes.',
+    directorRoast: 'Cuidado con lo que disparan, aquí los proyectiles tienen memoria y rencor.',
+    frictionMultiplier: 1.0,
+    bulletBouncesBonus: 3,
+    enemySpeedMultiplier: 1.25,
+    playerDamageMultiplier: 1.2,
+    lowVisibility: false,
+    visibilityRadius: 900,
+    hazardType: 'NONE',
+  },
+  {
+    title: 'Cámara de Furia Hiperquinética',
+    description: 'Una sobrecarga de energía arcana acelera a todas las criaturas del recinto.',
+    directorRoast: '¿Se tomaron 5 latas de energizante los monstruos? Sí, y van por ustedes.',
+    frictionMultiplier: 0.9,
+    bulletBouncesBonus: 1,
+    enemySpeedMultiplier: 1.45,
+    playerDamageMultiplier: 1.25,
+    lowVisibility: false,
+    visibilityRadius: 900,
+    hazardType: 'LAVA_PITS',
+  },
+  {
+    title: 'El Templo de la Penumbra Estigia',
+    description: 'Las antorchas se apagaron. Solo tu linterna ilumina lo que se arrastra en la oscuridad.',
+    directorRoast: 'Si no lo ven venir, no duele tanto... mentira, duele el triple.',
+    frictionMultiplier: 1.0,
+    bulletBouncesBonus: 1,
+    enemySpeedMultiplier: 1.1,
+    playerDamageMultiplier: 1.15,
+    lowVisibility: true,
+    visibilityRadius: 230,
+    hazardType: 'NONE',
+  },
+];
+
+export const MOCK_RELICS: Relic[] = [
+  {
+    id: 'relic_cafe_nuclear',
+    name: 'Café Nuclear de las 3 AM',
+    lore: 'Hervido en un reactor de oficina abandonado con agua sospechosamente verde.',
+    icon: '☕',
+    buffDescription: '+35% Velocidad de movimiento y +25% cadencia de fuego.',
+    curseDescription: 'Al frenar en seco dejas una pequeña chispa de retroceso.',
+    modifiers: {
+      moveSpeedMultiplier: 1.35,
+      attackCooldownMultiplier: 0.75,
+    },
+  },
+  {
+    id: 'relic_mocasines_rebote',
+    name: 'Mocasines de Balística Rebotadora',
+    lore: 'Piel de serpiente con suelas de goma superelástica.',
+    icon: '👞',
+    buffDescription: 'Tus disparos rebotan 2 veces adicionales en las paredes.',
+    curseDescription: 'Cuidado: los rebotes pueden cruzar toda la sala.',
+    modifiers: {
+      bulletBouncesBonus: 2,
+      damageMultiplier: 1.15,
+    },
+  },
+  {
+    id: 'relic_piedra_sangre',
+    name: 'Corazón de Piedra Sangrante',
+    lore: 'Late con un ritmo pesado y metálico al ritmo de la masacre.',
+    icon: '🩸',
+    buffDescription: '+50 HP Máximo permanente.',
+    curseDescription: '-10% Velocidad de movimiento por el sobrepeso.',
+    modifiers: {
+      maxHpBonus: 50,
+      moveSpeedMultiplier: 0.9,
+    },
+  },
+  {
+    id: 'relic_escopeta_locura',
+    name: 'Espejo de Disparo Múltiple',
+    lore: 'Refleja cada proyectil en un ángulo disparatado.',
+    icon: '🪞',
+    buffDescription: 'Disparas +2 proyectiles adicionales en abanico.',
+    curseDescription: 'Cada proyectil individual inflige 15% menos daño base.',
+    modifiers: {
+      bulletCountBonus: 2,
+      damageMultiplier: 0.85,
+    },
+  },
+  {
+    id: 'relic_guantelete_coloso',
+    name: 'Guantelete del Titán Descalzo',
+    lore: 'Pesa 30 kilos pero golpea como un tren de mercancías.',
+    icon: '🥊',
+    buffDescription: '+50% Daño de ataque.',
+    curseDescription: '+20% Tiempo entre ataques.',
+    modifiers: {
+      damageMultiplier: 1.5,
+      attackCooldownMultiplier: 1.2,
+    },
+  },
+];
+
+export const MOCK_DIRECTOR_QUOTES = {
+  roomClear: [
+    'Milagro. Sobrevivieron a una sala diseñada para preescolares.',
+    'No se emocionen tanto, el conserje del calabozo limpiará sus manchas en la siguiente.',
+    'Avanzan con la gracia de una heladera rodando por una colina.',
+    'Bien jugado... supongo. No esperaba tener que pagar el seguro por ustedes todavía.',
+  ],
+  playerDown: [
+    '¡Y cae el primero! Menos reparto del botín para los que queden.',
+    'Beso al piso con honores. Espero que alguien tenga la decencia de levantarlo.',
+    'Un concursante fuera de servicio. Recuerden que no hay reembolso de entrada.',
+  ],
+  bossIntro: [
+    'Llegaron al final del contrato. Conozcan a la Bestia del Algoritmo Central.',
+    '¿Creían que esto era una aventura? Esto es una auditoría judicial con rayos láser.',
+  ],
+};
