@@ -750,9 +750,9 @@ export class SpriteModels {
     }
 
     if (isFlashing) {
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
       ctx.beginPath();
-      ctx.arc(0, 0, enemy.radius, 0, Math.PI * 2);
+      ctx.arc(0, 0, enemy.radius * 1.1, 0, Math.PI * 2);
       ctx.fill();
     }
 

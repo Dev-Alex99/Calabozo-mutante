@@ -1,6 +1,6 @@
 import React from 'react';
 import { PlayerEntity, CLASS_CONFIGS, AltarEntity } from '../types';
-import { Heart, Zap, Sparkles, Shield, Flame, Coins, Hammer, Scale } from 'lucide-react';
+import { Heart, Zap, Sparkles, Shield, Flame, Coins, Hammer, Scale, Volume2 } from 'lucide-react';
 import { sfx } from '../audio/sfx';
 
 interface Props {
@@ -9,14 +9,18 @@ interface Props {
   totalRooms: number;
   enemiesRemaining: number;
   altar: AltarEntity | null;
+  ping?: number;
   onAltarInteract: (action: 'UPGRADE_WEAPON' | 'BUY_HEAL' | 'BUY_SHIELD' | 'ACCEPT_PACT') => void;
+  onOpenAudio?: () => void;
 }
 
 export const PlayerHUD: React.FC<Props> = React.memo(({
   player,
   enemiesRemaining,
   altar,
+  ping,
   onAltarInteract,
+  onOpenAudio,
 }) => {
   const hpPct = Math.max(0, Math.min(100, (player.currentHp / player.maxHp) * 100));
   const shieldPct = Math.max(0, Math.min(100, player.shieldHp));
@@ -85,13 +89,32 @@ export const PlayerHUD: React.FC<Props> = React.memo(({
           <div className="absolute bottom-1 left-1 w-1 h-1 rounded-full bg-[#78716c]"></div>
           <div className="absolute bottom-1 right-1 w-1 h-1 rounded-full bg-[#78716c]"></div>
 
-          {/* Top: Name, Weapon Level & Gold */}
+          {/* Top: Name, Weapon Level, Ping & Gold */}
           <div className="flex items-center justify-between text-xs font-cinzel">
             <div className="flex items-center gap-1.5">
               <span className="font-bold text-[#e7e5e4]">{player.name}</span>
               <span className="text-[#d97706] text-[10px] bg-[#1c1917] px-1.5 py-0.5 rounded border border-[#44403c]">
                 ⚒️ Nv.{player.weaponLevel}
               </span>
+              {typeof ping === 'number' && (
+                <span
+                  className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold flex items-center gap-1 ${
+                    ping < 80
+                      ? 'text-emerald-400 bg-emerald-950/70 border border-emerald-700/60'
+                      : ping < 180
+                      ? 'text-yellow-400 bg-yellow-950/70 border border-yellow-700/60'
+                      : ping < 300
+                      ? 'text-orange-400 bg-orange-950/70 border border-orange-700/60'
+                      : 'text-rose-400 bg-rose-950/70 border border-rose-700/60'
+                  }`}
+                  title={`Latencia RTT: ${ping}ms`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    ping < 80 ? 'bg-emerald-400' : ping < 180 ? 'bg-yellow-400' : ping < 300 ? 'bg-orange-400' : 'bg-rose-400 animate-pulse'
+                  }`} />
+                  {ping}ms
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <span className="text-amber-400 font-bold text-xs flex items-center gap-1">
@@ -100,6 +123,15 @@ export const PlayerHUD: React.FC<Props> = React.memo(({
               <span className="text-[#a8a29e] font-bold text-[10px]">
                 {enemiesRemaining > 0 ? `⚔️ ${enemiesRemaining}` : '✓ LIMPIA'}
               </span>
+              {onOpenAudio && (
+                <button
+                  onClick={onOpenAudio}
+                  className="p-1 rounded bg-[#1c1917] hover:bg-[#292524] border border-[#44403c] text-[#a8a29e] hover:text-[#f5f5f4] transition"
+                  title="Ajustes de Sonido & Música (M)"
+                >
+                  <Volume2 size={11} />
+                </button>
+              )}
             </div>
           </div>
 

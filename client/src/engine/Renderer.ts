@@ -34,6 +34,34 @@ export class GameRenderer {
   // Smooth 60-144 FPS entity position interpolation buffer for multiplayer
   private interpPositions = new Map<string, { x: number; y: number }>();
 
+  // Local predictive projectiles for 0ms client responsiveness
+  public predictiveProjectiles: ProjectileEntity[] = [];
+
+  // Active Auto-Aim / Gamepad Target Lock World Position
+  public targetLockPos: { x: number; y: number } | null = null;
+
+  public addPredictiveProjectile(proj: ProjectileEntity) {
+    this.predictiveProjectiles.push(proj);
+  }
+
+  public updatePredictiveProjectiles(dt: number, serverProjectiles: ProjectileEntity[]) {
+    for (let i = this.predictiveProjectiles.length - 1; i >= 0; i--) {
+      const p = this.predictiveProjectiles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.lifetimeMs -= dt * 1000;
+
+      // Retire predictive projectile if server confirmed it nearby (prevent duplicates)
+      const matchedByServer = serverProjectiles.some(
+        sp => sp.fromPlayer && Math.hypot(sp.x - p.x, sp.y - p.y) < 70
+      );
+
+      if (p.lifetimeMs <= 0 || matchedByServer) {
+        this.predictiveProjectiles.splice(i, 1);
+      }
+    }
+  }
+
   constructor() {
     this.initDustMotes();
   }
@@ -53,9 +81,26 @@ export class GameRenderer {
     }
   }
 
+  public chromaticAberrationTime = 0;
+  public hitStopTime = 0;
+  public quality: 'HIGH' | 'MEDIUM' | 'LOW' = (localStorage.getItem('calabozo_gfx_quality') as any) || 'HIGH';
+
   public addScreenShake(intensity = 6, duration = 0.2) {
     this.screenShakeIntensity = Math.max(this.screenShakeIntensity, intensity);
     this.screenShakeTime = Math.max(this.screenShakeTime, duration);
+  }
+
+  public addHitStop(duration = 0.045) {
+    this.hitStopTime = Math.max(this.hitStopTime, duration);
+  }
+
+  public addChromaticAberration(duration = 0.14) {
+    this.chromaticAberrationTime = Math.max(this.chromaticAberrationTime, duration);
+  }
+
+  public setQuality(q: 'HIGH' | 'MEDIUM' | 'LOW') {
+    this.quality = q;
+    localStorage.setItem('calabozo_gfx_quality', q);
   }
 
   public addBloodDecal(x: number, y: number, color = '#7f1d1d') {
@@ -74,21 +119,33 @@ export class GameRenderer {
     ctx.restore();
   }
 
-  private getSmoothPos(id: string, targetX: number, targetY: number, dt: number, isLocal = false) {
+  private getSmoothPos(
+    id: string,
+    targetX: number,
+    targetY: number,
+    dt: number,
+    isLocal = false,
+    targetVx = 0,
+    targetVy = 0
+  ) {
     if (isLocal) {
       const direct = { x: targetX, y: targetY };
       this.interpPositions.set(id, direct);
       return direct;
     }
     const prev = this.interpPositions.get(id);
-    if (!prev || Math.hypot(targetX - prev.x, targetY - prev.y) > 180) {
+    if (!prev || Math.hypot(targetX - prev.x, targetY - prev.y) > 320) {
       const fresh = { x: targetX, y: targetY };
       this.interpPositions.set(id, fresh);
       return fresh;
     }
-    const blend = Math.min(1, dt * 18);
-    prev.x += (targetX - prev.x) * blend;
-    prev.y += (targetY - prev.y) * blend;
+
+    // Smooth predictive lead along velocity vector to eliminate 20Hz stepping
+    const leadX = targetX + targetVx * 0.035;
+    const leadY = targetY + targetVy * 0.035;
+    const blend = Math.min(1, dt * 24);
+    prev.x += (leadX - prev.x) * blend;
+    prev.y += (leadY - prev.y) * blend;
     return prev;
   }
 
@@ -100,10 +157,28 @@ export class GameRenderer {
     canvasHeight: number,
     dt: number
   ) {
+    // Process Hit-Stop (Cinematic Freeze-Frame Impact)
+    if (this.hitStopTime > 0) {
+      this.hitStopTime -= dt;
+      dt = 0;
+    }
+    if (this.chromaticAberrationTime > 0) {
+      this.chromaticAberrationTime -= dt;
+    }
+
     this.totalTime += dt;
     const localPlayer = world.players[localPlayerId];
     const roomW = world.room.width || 1200;
     const roomH = world.room.height || 800;
+
+    // Viewport Bounding-Box Culling (2D Frustum Culling)
+    const viewPad = 95;
+    const viewLeft = this.cameraX - viewPad;
+    const viewRight = this.cameraX + canvasWidth + viewPad;
+    const viewTop = this.cameraY - viewPad;
+    const viewBottom = this.cameraY + canvasHeight + viewPad;
+    const inView = (x: number, y: number, r = 40) =>
+      x + r >= viewLeft && x - r <= viewRight && y + r >= viewTop && y - r <= viewBottom;
 
     // 0. Client-side 60-144 FPS Dead-Reckoning Extrapolation between 20Hz server ticks
     if (world.phase === 'PLAYING') {
@@ -122,6 +197,7 @@ export class GameRenderer {
         proj.x += proj.vx * dt;
         proj.y += proj.vy * dt;
       }
+      this.updatePredictiveProjectiles(dt, world.projectiles);
     }
 
     // 1. Camera Tracking with smooth Lerp
@@ -259,22 +335,35 @@ export class GameRenderer {
       ctx.restore();
     }
 
-    // 4.5. Environmental & Skill Hazards (Lava, Poison Spores, Spike Traps, Arcane Vortex, Meteor Strikes)
+    // 4.5. Environmental & Skill Hazards with Frustum Culling
     if (world.room.hazards) {
       for (const h of world.room.hazards) {
-        SpriteModels.drawHazard(ctx, h, this.totalTime);
+        if (inView(h.x, h.y, h.radius || 90)) {
+          SpriteModels.drawHazard(ctx, h, this.totalTime);
+        }
       }
     }
 
-    // 4.8. Interactive Barrels (Explosive, Frost, Toxic)
+    // 4.8. Interactive Barrels with Soft Contact Shadows
     if (world.room.barrels) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
       for (const b of world.room.barrels) {
-        SpriteModels.drawBarrel(ctx, b, this.totalTime);
+        if (inView(b.x, b.y, 40)) {
+          ctx.beginPath();
+          ctx.ellipse(b.x, b.y + 11, 14, 6, 0, 0, Math.PI * 2);
+          ctx.fill();
+          SpriteModels.drawBarrel(ctx, b, this.totalTime);
+        }
       }
     }
 
-    // 5. Chest (Ornate Carved Medieval Chest)
-    if (world.room.chest) {
+    // 5. Chest with Contact Shadow & Culling
+    if (world.room.chest && inView(world.room.chest.x, world.room.chest.y, 60)) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+      ctx.beginPath();
+      ctx.ellipse(world.room.chest.x, world.room.chest.y + 14, 22, 9, 0, 0, Math.PI * 2);
+      ctx.fill();
+
       const localClaimed = world.room.chest.claimedByPlayerIds?.includes(localPlayerId);
       SpriteModels.drawChest(
         ctx,
@@ -285,21 +374,29 @@ export class GameRenderer {
       );
     }
 
-    // 5.2. Altar of Pacts & Armory
-    if (world.room.altar) {
+    // 5.2. Altar of Pacts & Armory with Contact Shadow
+    if (world.room.altar && inView(world.room.altar.x, world.room.altar.y, 70)) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.48)';
+      ctx.beginPath();
+      ctx.ellipse(world.room.altar.x, world.room.altar.y + 16, 26, 11, 0, 0, Math.PI * 2);
+      ctx.fill();
       SpriteModels.drawAltar(ctx, world.room.altar, this.totalTime);
     }
 
     // 5.5. Draw Pickups (Hearts, Gold Coins, Shield Orbs, Frenzy Orbs)
     if (world.room.hearts) {
       for (const heart of world.room.hearts) {
-        SpriteModels.drawHeartPickup(ctx, heart, this.totalTime);
+        if (inView(heart.x, heart.y, 30)) {
+          SpriteModels.drawHeartPickup(ctx, heart, this.totalTime);
+        }
       }
     }
 
-    // 5.6. Draw Enemy Aim Telegraph Warning Lines
+    // 5.6. Draw Enemy Aim Telegraph Warning Lines with Culling
     for (const enemy of world.enemies) {
-      SpriteModels.drawEnemyTelegraph(ctx, enemy);
+      if (inView(enemy.x, enemy.y, enemy.radius + 180)) {
+        SpriteModels.drawEnemyTelegraph(ctx, enemy);
+      }
     }
 
     // 5.9. Draw Boss Immunity Shield Tethers to Ritual Guardians
@@ -342,16 +439,54 @@ export class GameRenderer {
       }
     }
 
-    // 6. Draw Enemies with Smooth 60 FPS Interpolation
+    // 6. Draw Enemies with Smooth 60 FPS Interpolation & Contact Drop Shadows
     for (const enemy of world.enemies) {
-      const sp = this.getSmoothPos(enemy.id, enemy.x, enemy.y, dt, false);
+      if (!inView(enemy.x, enemy.y, enemy.radius + 40)) continue;
+      const sp = this.getSmoothPos(enemy.id, enemy.x, enemy.y, dt, false, enemy.vx, enemy.vy);
+
+      // Soft contact drop shadow under enemy
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
+      ctx.beginPath();
+      ctx.ellipse(sp.x, sp.y + enemy.radius * 0.72, enemy.radius * 0.95, enemy.radius * 0.45, 0, 0, Math.PI * 2);
+      ctx.fill();
+
       SpriteModels.drawEnemy(ctx, { ...enemy, x: sp.x, y: sp.y }, this.totalTime);
+    }
+
+    // 6.5. Draw Target Lock Indicator (Auto-Aim / Mobile / Gamepad)
+    if (this.targetLockPos) {
+      ctx.save();
+      ctx.translate(this.targetLockPos.x, this.targetLockPos.y);
+      ctx.rotate(this.totalTime * 2.8);
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 2.2;
+      const r = 26 + Math.sin(this.totalTime * 8) * 2.5;
+
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 0.4);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, r, Math.PI * 0.5, Math.PI * 0.9);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, r, Math.PI, Math.PI * 1.4);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, r, Math.PI * 1.5, Math.PI * 1.9);
+      ctx.stroke();
+
+      // Inner center dot
+      ctx.fillStyle = '#f87171';
+      ctx.beginPath();
+      ctx.arc(0, 0, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
     }
 
     // 7. Draw Players with Smooth 60 FPS Interpolation & Motion Particles
     for (const player of Object.values(world.players)) {
       const isLocal = player.id === localPlayerId;
-      const sp = this.getSmoothPos(player.id, player.x, player.y, dt, isLocal);
+      const sp = this.getSmoothPos(player.id, player.x, player.y, dt, isLocal, player.vx, player.vy);
       const smoothPlayer: PlayerEntity = { ...player, x: sp.x, y: sp.y };
 
       if (player.isAlive) {
@@ -372,20 +507,52 @@ export class GameRenderer {
       }
 
       SpriteModels.drawPlayer(ctx, smoothPlayer, player.id === localPlayerId, this.totalTime);
+
+      if (player.isDisconnected) {
+        ctx.save();
+        ctx.translate(sp.x, sp.y);
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.arc(0, 0, 26, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = '#38bdf8';
+        ctx.font = 'bold 10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.shadowColor = '#000';
+        ctx.shadowBlur = 4;
+        ctx.fillText('⚡ RECONECTANDO...', 0, -32);
+        ctx.restore();
+      }
     }
 
-    // 8. Draw Projectiles
+    // 8. Draw Projectiles (Server + Local Predictive) with Viewport Culling
     for (const proj of world.projectiles) {
-      this.drawProjectile(ctx, proj);
+      if (inView(proj.x, proj.y, proj.radius + 30)) {
+        this.drawProjectile(ctx, proj);
+      }
+    }
+    for (const proj of this.predictiveProjectiles) {
+      if (inView(proj.x, proj.y, proj.radius + 30)) {
+        this.drawProjectile(ctx, proj);
+      }
     }
 
-    // 9. Update & Draw Particles (Sparks, blood, shockwaves, lightning arcs)
+    // 9. Update & Draw Particles (Sparks, blood, shockwaves, lightning arcs, bouncing gibs, slash arcs)
     this.particleSystem.update(dt);
     this.particleSystem.render(ctx);
 
     // 10. Floating Damage Numbers & Synergy Callouts
     this.textManager.update(dt);
     this.textManager.render(ctx);
+
+    // 10.5. Dynamic 2D Real-Time Lighting Pass (Additive Blending)
+    if (this.quality !== 'LOW') {
+      this.drawDynamicLighting(ctx, world, localPlayer, inView);
+    }
 
     // 11. Lighting, Ambient Warmth, Fog of War & Drifting Dust Motes
     this.drawAmbianceAndFog(ctx, world, localPlayer, roomW, roomH, dt);
@@ -397,6 +564,9 @@ export class GameRenderer {
 
     ctx.restore();
 
+    // 11.8. Screen-Space Cinematic Post-Processing Pass (Gothic Vignette, Low-HP Bloodied Screen, Chromatic Aberration, Dash Streaks)
+    this.drawPostProcessing(ctx, world, localPlayer, canvasWidth, canvasHeight);
+
     // 12. Screen-Space Labyrinth Mini-Map (Top-Right Corner)
     this.drawMiniMap(ctx, world, localPlayer, canvasWidth);
   }
@@ -404,6 +574,8 @@ export class GameRenderer {
   private ensureOffscreenBackground(world: GameWorldState, w: number, h: number) {
     if (
       this.offscreenCanvas &&
+      this.offscreenCanvas.width === w &&
+      this.offscreenCanvas.height === h &&
       this.cachedRoomIndex === world.room.roomIndex &&
       this.cachedMutationTitle === world.room.mutation.title
     ) {
@@ -715,6 +887,151 @@ export class GameRenderer {
 
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, w, h);
+    }
+
+    ctx.restore();
+  }
+
+  private drawDynamicLighting(
+    ctx: CanvasRenderingContext2D,
+    world: GameWorldState,
+    localPlayer: PlayerEntity | undefined,
+    inView: (x: number, y: number, r?: number) => boolean
+  ) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    const time = this.totalTime;
+
+    // 1. Dynamic Wall Torch Point Lights (Warm golden/orange radiance with organic flicker)
+    const pad = 44;
+    const w = world.room.width || 1200;
+    const h = world.room.height || 800;
+    const torches = [
+      { x: w * 0.25, y: pad },
+      { x: w * 0.75, y: pad },
+      { x: pad, y: h * 0.3 },
+      { x: w - pad, y: h * 0.3 },
+    ];
+    for (const t of torches) {
+      if (!inView(t.x, t.y, 220)) continue;
+      const flicker = Math.sin(time * 12 + t.x) * 10 + Math.cos(time * 19 + t.y) * 6;
+      const radius = Math.max(10, 210 + flicker);
+      const grad = ctx.createRadialGradient(t.x, t.y, 6, t.x, t.y, radius);
+      grad.addColorStop(0, 'rgba(249, 115, 22, 0.22)');
+      grad.addColorStop(0.45, 'rgba(234, 88, 12, 0.07)');
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 2. Player Lanterns / Magical Class Auras
+    for (const p of Object.values(world.players)) {
+      if (!p.isAlive || !inView(p.x, p.y, 160)) continue;
+      const radius = 135 + Math.sin(time * 6 + p.x) * 5;
+      const grad = ctx.createRadialGradient(p.x, p.y, 8, p.x, p.y, radius);
+      if (p.classType === 'MAGO') {
+        grad.addColorStop(0, 'rgba(249, 115, 22, 0.26)');
+        grad.addColorStop(0.5, 'rgba(234, 88, 12, 0.08)');
+      } else if (p.classType === 'GUERRERO') {
+        grad.addColorStop(0, 'rgba(250, 204, 21, 0.20)');
+        grad.addColorStop(0.5, 'rgba(217, 119, 6, 0.06)');
+      } else if (p.classType === 'PICARO') {
+        grad.addColorStop(0, 'rgba(16, 185, 129, 0.20)');
+        grad.addColorStop(0.5, 'rgba(5, 150, 105, 0.06)');
+      } else {
+        grad.addColorStop(0, 'rgba(56, 189, 248, 0.20)');
+        grad.addColorStop(0.5, 'rgba(2, 132, 199, 0.06)');
+      }
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 3. Glowing Projectiles
+    for (const proj of world.projectiles) {
+      if (!inView(proj.x, proj.y, 90)) continue;
+      if (proj.isExplosive || proj.radius > 12 || !proj.fromPlayer) {
+        const pRadius = Math.max(6, proj.radius * 3.2);
+        const grad = ctx.createRadialGradient(proj.x, proj.y, 2, proj.x, proj.y, pRadius);
+        grad.addColorStop(0, proj.color ? `${proj.color}44` : 'rgba(249, 115, 22, 0.25)');
+        grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(proj.x, proj.y, pRadius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
+  }
+
+  private drawPostProcessing(
+    ctx: CanvasRenderingContext2D,
+    world: GameWorldState,
+    localPlayer: PlayerEntity | undefined,
+    w: number,
+    h: number
+  ) {
+    if (this.quality === 'LOW' || w <= 10 || h <= 10) return;
+
+    ctx.save();
+
+    // 1. Cinematic Gothic Vignette (Darkens edges and corners for deep dungeon atmosphere)
+    const maxDim = Math.max(w, h);
+    const minDim = Math.min(w, h);
+    const vigGrad = ctx.createRadialGradient(w / 2, h / 2, minDim * 0.44, w / 2, h / 2, maxDim * 0.72);
+    vigGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    vigGrad.addColorStop(0.7, 'rgba(5, 4, 3, 0.35)');
+    vigGrad.addColorStop(1, 'rgba(2, 2, 2, 0.72)');
+    ctx.fillStyle = vigGrad;
+    ctx.fillRect(0, 0, w, h);
+
+    // 2. Visceral Low-HP Bloodied Screen Vignette (pulsing in sync with heartbeat!)
+    if (localPlayer && localPlayer.isAlive && localPlayer.currentHp / localPlayer.maxHp <= 0.25) {
+      const hpPct = localPlayer.currentHp / localPlayer.maxHp;
+      const pulseSpeed = 7.8; // Matches 73 BPM visceral heartbeat
+      const pulseIntensity = (0.28 + Math.sin(this.totalTime * pulseSpeed) * 0.18) * (1 - hpPct / 0.25);
+      const bloodGrad = ctx.createRadialGradient(w / 2, h / 2, minDim * 0.35, w / 2, h / 2, maxDim * 0.7);
+      bloodGrad.addColorStop(0, 'rgba(220, 38, 38, 0)');
+      bloodGrad.addColorStop(0.65, `rgba(185, 28, 28, ${pulseIntensity * 0.5})`);
+      bloodGrad.addColorStop(1, `rgba(127, 29, 29, ${pulseIntensity * 0.88})`);
+      ctx.fillStyle = bloodGrad;
+      ctx.fillRect(0, 0, w, h);
+    }
+
+    // 3. Chromatic Aberration & Critical Impact Border Pulse
+    if (this.chromaticAberrationTime > 0) {
+      const alpha = Math.min(0.35, this.chromaticAberrationTime * 2.2);
+      ctx.fillStyle = `rgba(239, 68, 68, ${alpha})`;
+      ctx.fillRect(0, 0, w, 3);
+      ctx.fillRect(0, h - 3, w, 3);
+      ctx.fillStyle = `rgba(56, 189, 248, ${alpha})`;
+      ctx.fillRect(0, 0, 3, h);
+      ctx.fillRect(w - 3, 0, 3, h);
+    }
+
+    // 4. Kinetic Dash Speed Streaks
+    if (localPlayer && localPlayer.isAlive && localPlayer.isDashing) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+      ctx.lineWidth = 1.5;
+      const cx = w / 2;
+      const cy = h / 2;
+      for (let i = 0; i < 14; i++) {
+        const angle = (i / 14) * Math.PI * 2 + (this.totalTime * 3);
+        const r1 = minDim * 0.44 + (Math.sin(i * 99) * 20);
+        const r2 = r1 + 35 + (Math.cos(i * 44) * 25);
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(angle) * r1, cy + Math.sin(angle) * r1);
+        ctx.lineTo(cx + Math.cos(angle) * r2, cy + Math.sin(angle) * r2);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
 
     ctx.restore();

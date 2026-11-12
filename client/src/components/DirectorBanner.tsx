@@ -10,6 +10,7 @@ interface Props {
   totalRooms: number;
   encounterType?: RoomEncounterType;
   directorAnger?: number;
+  onOpenAudio?: () => void;
 }
 
 export const DirectorBanner: React.FC<Props> = React.memo(({
@@ -19,6 +20,7 @@ export const DirectorBanner: React.FC<Props> = React.memo(({
   totalRooms,
   encounterType = 'STANDARD',
   directorAnger = 0,
+  onOpenAudio,
 }) => {
   const [voiceEnabled, setVoiceEnabled] = useState(true);
 
@@ -113,9 +115,9 @@ export const DirectorBanner: React.FC<Props> = React.memo(({
           )}
 
           <button
-            onClick={toggleVoice}
-            className="p-1.5 rounded bg-[#1c1917] border border-[#44403c] text-[#a8a29e] hover:text-[#f5f5f4] hover:border-[#78716c] transition"
-            title={voiceEnabled ? 'Silenciar voz' : 'Activar voz'}
+            onClick={onOpenAudio || toggleVoice}
+            className="p-1.5 rounded bg-[#1c1917] border border-[#44403c] text-[#a8a29e] hover:text-[#f5f5f4] hover:border-[#78716c] transition pointer-events-auto"
+            title="Ajustes de Sonido, Música y Voz (M)"
           >
             {voiceEnabled ? <Volume2 size={15} /> : <VolumeX size={15} className="text-red-500" />}
           </button>

@@ -19,6 +19,10 @@ export class RoomManager {
     }
 
     const room = new DungeonRoom(code, this.io, this.director);
+    room.onEmpty = () => {
+      this.removeRoom(code);
+      console.log(`[RoomManager] Mazmorra vacía eliminada: ${code}`);
+    };
     this.rooms.set(code, room);
     console.log(`[RoomManager] Nueva mazmorra creada: ${code}`);
     return room;
@@ -36,12 +40,15 @@ export class RoomManager {
     for (const [code, room] of this.rooms.entries()) {
       if (room.players[socketId]) {
         console.log(`[RoomManager] Jugador desconectado ${socketId} de la sala ${code}`);
-        room.removePlayer(socketId);
-        if (Object.keys(room.players).length === 0) {
-          this.removeRoom(code);
-          console.log(`[RoomManager] Sala vacía eliminada: ${code}`);
-        } else {
-          room.broadcastState();
+        const wasRetained = room.markPlayerDisconnected(socketId);
+        if (!wasRetained) {
+          const remainingHumans = Object.values(room.players).filter(p => !p.isBot);
+          if (remainingHumans.length === 0) {
+            this.removeRoom(code);
+            console.log(`[RoomManager] Sala vacía eliminada: ${code}`);
+          } else {
+            room.broadcastState();
+          }
         }
         break;
       }

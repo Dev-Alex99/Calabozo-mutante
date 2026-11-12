@@ -117,6 +117,42 @@ io.on('connection', (socket: Socket) => {
     }
   });
 
+  // Reconnect Player to Active Game
+  socket.on('room:reconnect', ({ code, playerId }, callback) => {
+    try {
+      const room = roomManager.getRoom(code);
+      if (!room) {
+        if (typeof callback === 'function') {
+          callback({ success: false, error: 'Mazmorra no encontrada o expirada.' });
+        }
+        return;
+      }
+
+      const reconnectedPlayer = room.reconnectPlayer(socket.id, playerId);
+      if (!reconnectedPlayer) {
+        if (typeof callback === 'function') {
+          callback({ success: false, error: 'No se pudo reconectar al aventurero.' });
+        }
+        return;
+      }
+
+      socket.join(room.code);
+      if (typeof callback === 'function') {
+        callback({
+          success: true,
+          code: room.code,
+          playerId: reconnectedPlayer.id,
+          state: room.getState(),
+        });
+      }
+      room.broadcastState();
+    } catch (err: any) {
+      if (typeof callback === 'function') {
+        callback({ success: false, error: err.message });
+      }
+    }
+  });
+
   // Change Class in Lobby
   socket.on('player:change_class', ({ code, classType }) => {
     const room = roomManager.getRoom(code);
@@ -165,12 +201,31 @@ io.on('connection', (socket: Socket) => {
     room.continueEndlessMode();
   });
 
-  // Player Input (20-30 Hz)
-  socket.on('player:input', ({ code, moveX, moveY, angle, isAttacking, isDashing, isUsingSkill, x, y, vx, vy, roomIndex }) => {
+  // Network Latency Heartbeat / RTT measurement (Precision Ping)
+  socket.on('net:ping', (clientTime: number, callback) => {
+    if (typeof callback === 'function') {
+      callback({
+        clientTime,
+        serverTime: Date.now(),
+      });
+    }
+  });
+
+  // Client reporting measured ping for room telemetry & lag compensation
+  socket.on('player:ping_stat', ({ code, ping }) => {
+    const room = roomManager.getRoom(code);
+    if (!room) return;
+    room.updatePlayerPing(socket.id, ping);
+  });
+
+  // Player Input (Client Prediction & Sequencing)
+  socket.on('player:input', ({ code, seq, clientTime, moveX, moveY, angle, isAttacking, isDashing, isUsingSkill, x, y, vx, vy, roomIndex }) => {
     const room = roomManager.getRoom(code);
     if (!room) return;
 
     room.handlePlayerInput(socket.id, {
+      seq: typeof seq === 'number' ? seq : undefined,
+      clientTime: typeof clientTime === 'number' ? clientTime : undefined,
       moveX: moveX || 0,
       moveY: moveY || 0,
       angle: angle || 0,

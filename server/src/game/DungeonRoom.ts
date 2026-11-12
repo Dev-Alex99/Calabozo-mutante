@@ -78,6 +78,19 @@ export class DungeonRoom {
   private isTransitioningRoom = false;
   private lastClientSyncAt: Record<string, number> = {};
 
+  // Delta Compression Dirty Flags (Up to 75% bandwidth reduction)
+  private heartsDirty = true;
+  private barrelsDirty = true;
+  private hazardsDirty = true;
+  private staticSyncTickCounter = 0;
+  public onEmpty?: () => void;
+
+  // Melee & AoE Lag Rewind World History Buffer (last 650ms)
+  private worldHistory: Array<{
+    timestamp: number;
+    enemies: Array<{ id: string; x: number; y: number; radius: number }>;
+  }> = [];
+
   public telemetry = {
     totalDamageDealt: 0,
     rangedAttacksCount: 0,
@@ -210,7 +223,77 @@ export class DungeonRoom {
       this.stopLoop();
       // Clean up bots if no humans remain
       this.players = {};
+      this.onEmpty?.();
     }
+  }
+
+  public markPlayerDisconnected(socketId: string): boolean {
+    const p = this.players[socketId];
+    if (!p) return false;
+    if (this.phase === 'LOBBY') {
+      this.removePlayer(socketId);
+      return false;
+    }
+
+    p.isDisconnected = true;
+    p.disconnectedAt = Date.now();
+    p.invulnerableUntil = Math.max(p.invulnerableUntil, Date.now() + 25000);
+    this.directorDialogue = {
+      speaker: 'Director del Calabozo',
+      text: `¡${p.name} perdió la sintonía astral! Tiene 25s para reconectar.`,
+      mood: 'MOCKING',
+      timestamp: Date.now(),
+    };
+    this.broadcastState();
+    return true;
+  }
+
+  public reconnectPlayer(newSocketId: string, oldPlayerId: string): PlayerEntity | null {
+    let player: PlayerEntity | null = null;
+    if (this.players[oldPlayerId]) {
+      player = this.players[oldPlayerId];
+      delete this.players[oldPlayerId];
+    } else {
+      const candidate = Object.values(this.players).find(p => p.isDisconnected);
+      if (candidate) {
+        player = candidate;
+        delete this.players[candidate.id];
+      }
+    }
+
+    if (player) {
+      player.id = newSocketId;
+      player.isDisconnected = false;
+      player.disconnectedAt = undefined;
+      player.invulnerableUntil = Date.now() + 3000;
+      this.players[newSocketId] = player;
+      this.heartsDirty = true;
+      this.barrelsDirty = true;
+      this.hazardsDirty = true;
+      this.directorDialogue = {
+        speaker: 'Director del Calabozo',
+        text: `¡${player.name} ha regresado del vacío cósmico!`,
+        mood: 'SURPRISED',
+        timestamp: Date.now(),
+      };
+      this.broadcastState();
+      return player;
+    }
+    return null;
+  }
+
+  private getPastSnapshot(timestamp: number) {
+    if (this.worldHistory.length === 0) return null;
+    let closest = this.worldHistory[0];
+    let minDiff = Math.abs(closest.timestamp - timestamp);
+    for (const snap of this.worldHistory) {
+      const diff = Math.abs(snap.timestamp - timestamp);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closest = snap;
+      }
+    }
+    return closest;
   }
 
   private emitFX(fx: Omit<WorldEventFX, 'id' | 'timestamp'>): void {
@@ -233,6 +316,13 @@ export class DungeonRoom {
       y: Math.max(60, Math.min(this.roomHeight - 60, y)),
       color: '#f59e0b',
     });
+  }
+
+  public updatePlayerPing(socketId: string, ping: number): void {
+    const p = this.players[socketId];
+    if (p && typeof ping === 'number' && Number.isFinite(ping)) {
+      p.ping = Math.max(0, Math.min(1000, Math.round(ping)));
+    }
   }
 
   public async startGame(): Promise<void> {
@@ -417,6 +507,10 @@ export class DungeonRoom {
           { id: 'spike_4', type: 'SPIKE_TRAP', x: W * 0.64, y: H * 0.64, radius: 38, active: false, createdAt: now, durationMs: 999999, damage: 18 }
         );
       }
+
+      this.heartsDirty = true;
+      this.barrelsDirty = true;
+      this.hazardsDirty = true;
 
       // 5. Setup Altar of Pacts & Armory
       const discount = this.encounterType === 'SANCTUARY' ? 0.65 : 1.0;
@@ -889,6 +983,8 @@ export class DungeonRoom {
   public handlePlayerInput(
     socketId: string,
     input: {
+      seq?: number;
+      clientTime?: number;
       moveX: number;
       moveY: number;
       angle: number;
@@ -905,6 +1001,10 @@ export class DungeonRoom {
     const player = this.players[socketId];
     if (!player || !player.isAlive || this.phase !== 'PLAYING') return;
 
+    if (typeof input.seq === 'number') {
+      player.lastProcessedSeq = Math.max(player.lastProcessedSeq || 0, input.seq);
+    }
+
     player.angle = input.angle;
     const now = Date.now();
     const stats = this.getPlayerEffectiveStats(player);
@@ -917,7 +1017,7 @@ export class DungeonRoom {
       typeof input.y === 'number'
     ) {
       const dist = Math.hypot(input.x - player.x, input.y - player.y);
-      if (dist < 380) {
+      if (dist < 450) {
         const W = this.roomWidth;
         const H = this.roomHeight;
         player.x = Math.max(32, Math.min(W - 32, input.x));
@@ -931,12 +1031,13 @@ export class DungeonRoom {
       }
     }
 
-    // 1. Handle Dash with 100% i-frames
+    // 1. Handle Dash with i-frames + latency tolerance
     if (input.isDashing && now >= player.dashCooldownEndsAt && !player.isDashing) {
       player.isDashing = true;
       player.dashEndsAt = now + stats.dashDurationMs;
       player.dashCooldownEndsAt = now + stats.dashCooldownMs;
-      player.invulnerableUntil = Math.max(player.invulnerableUntil, now + stats.dashDurationMs + 60);
+      const pingGrace = Math.min(180, Math.round((player.ping || 60) * 0.4));
+      player.invulnerableUntil = Math.max(player.invulnerableUntil, now + stats.dashDurationMs + 60 + pingGrace);
 
       const len = Math.hypot(input.moveX, input.moveY);
       const dirX = len > 0.1 ? input.moveX / len : Math.cos(player.angle);
@@ -967,13 +1068,13 @@ export class DungeonRoom {
     if (input.isUsingSkill && now >= player.skillCooldownEndsAt) {
       player.skillCooldownEndsAt = now + stats.skillCooldownMs;
       this.telemetry.skillsUsedCount++;
-      this.activateClassSkill(player, stats, now);
+      this.activateClassSkill(player, stats, now, input.clientTime);
     }
 
     // 3. Handle Primary Attack
     if (input.isAttacking && now - player.lastAttackAt >= stats.attackCooldownMs) {
       player.lastAttackAt = now;
-      this.firePlayerAttack(player, stats, now);
+      this.firePlayerAttack(player, stats, now, input.clientTime);
     }
   }
 
@@ -983,7 +1084,8 @@ export class DungeonRoom {
   private activateClassSkill(
     player: PlayerEntity,
     stats: ReturnType<typeof this.getPlayerEffectiveStats>,
-    now: number
+    now: number,
+    clientTime?: number
   ): void {
     const W = this.roomWidth;
     const H = this.roomHeight;
@@ -1011,10 +1113,18 @@ export class DungeonRoom {
           }
         }
       }
+      const pingDelay = clientTime ? Math.max(0, Math.min(320, now - clientTime)) : 0;
+      const targetTime = now - pingDelay;
+      const pastSnap = pingDelay > 35 ? this.getPastSnapshot(targetTime) : null;
+
       for (let i = this.enemies.length - 1; i >= 0; i--) {
         const e = this.enemies[i];
-        const dist = Math.hypot(e.x - player.x, e.y - player.y);
-        if (dist <= 170 + e.radius) {
+        const currentDist = Math.hypot(e.x - player.x, e.y - player.y);
+        const pastE = pastSnap ? pastSnap.enemies.find(pe => pe.id === e.id) : null;
+        const pastDist = pastE ? Math.hypot(pastE.x - player.x, pastE.y - player.y) : Infinity;
+        const effectiveDist = Math.min(currentDist, pastDist);
+
+        if (effectiveDist <= 170 + e.radius) {
           const pushAngle = Math.atan2(e.y - player.y, e.x - player.x);
           e.vx += Math.cos(pushAngle) * 320;
           e.vy += Math.sin(pushAngle) * 320;
@@ -1023,26 +1133,32 @@ export class DungeonRoom {
         }
       }
     } else if (player.classType === 'CAZADOR') {
-      // SALVA PERFORANTE & TRAMPA EXPLOSIVA
+      // SALVA PERFORANTE & TRAMPA EXPLOSIVA (Lag compensated forward-integration)
       const fanCount = 5;
       const fanSpread = 0.65;
+      const pingDelay = clientTime ? Math.max(0, Math.min(260, now - clientTime)) : 0;
+      const advanceSec = pingDelay / 1000;
       for (let i = 0; i < fanCount; i++) {
         const a = player.angle + (i - 2) * (fanSpread / 4);
+        const pVx = Math.cos(a) * 860;
+        const pVy = Math.sin(a) * 860;
+        const startX = player.x + Math.cos(a) * 28;
+        const startY = player.y + Math.sin(a) * 28;
         this.projectiles.push({
           id: `proj_${this.nextProjectileId++}`,
           ownerId: player.id,
           fromPlayer: true,
-          x: player.x + Math.cos(a) * 28,
-          y: player.y + Math.sin(a) * 28,
-          vx: Math.cos(a) * 860,
-          vy: Math.sin(a) * 860,
+          x: startX + pVx * advanceSec,
+          y: startY + pVy * advanceSec,
+          vx: pVx,
+          vy: pVy,
           radius: 8,
           damage: Math.round(stats.attackDamage * 1.35),
           color: '#38bdf8',
           bouncesRemaining: stats.bulletBounces + 1,
           piercesRemaining: 2,
           createdAt: now,
-          lifetimeMs: 1400,
+          lifetimeMs: Math.max(100, 1400 - pingDelay),
           isCrit: true,
           element: 'ICE',
         });
@@ -1060,6 +1176,7 @@ export class DungeonRoom {
         damage: Math.round(stats.attackDamage * 2.2),
         ownerId: player.id,
       });
+      this.hazardsDirty = true;
 
       this.emitFX({
         type: 'SHOCKWAVE',
@@ -1085,6 +1202,7 @@ export class DungeonRoom {
         damage: Math.round(stats.attackDamage * 0.45),
         ownerId: player.id,
       });
+      this.hazardsDirty = true;
 
       this.emitFX({
         type: 'FROST_NOVA',
@@ -1107,6 +1225,7 @@ export class DungeonRoom {
         damage: Math.round(stats.attackDamage * 2.6),
         ownerId: player.id,
       });
+      this.hazardsDirty = true;
 
       // Blink forward & enter stealth
       player.x = Math.max(60, Math.min(W - 60, player.x + Math.cos(player.angle) * 145));
@@ -1127,7 +1246,8 @@ export class DungeonRoom {
   private firePlayerAttack(
     player: PlayerEntity,
     stats: ReturnType<typeof this.getPlayerEffectiveStats>,
-    now: number
+    now: number,
+    clientTime?: number
   ): void {
     const isMelee = player.classType === 'GUERRERO' || player.classType === 'PICARO';
     if (isMelee) {
@@ -1144,6 +1264,8 @@ export class DungeonRoom {
     const bulletCount = stats.bulletCount;
     const spread = stats.bulletSpreadRad;
     const baseAngle = player.angle;
+    const pingDelay = clientTime ? Math.max(0, Math.min(260, now - clientTime)) : 0;
+    const advanceSec = pingDelay / 1000;
 
     for (let i = 0; i < bulletCount; i++) {
       const angleOffset =
@@ -1192,21 +1314,26 @@ export class DungeonRoom {
         }
       }
 
+      const pVx = Math.cos(finalAngle) * speed;
+      const pVy = Math.sin(finalAngle) * speed;
+      const startX = player.x + Math.cos(finalAngle) * 28;
+      const startY = player.y + Math.sin(finalAngle) * 28;
+
       this.projectiles.push({
         id: `proj_${this.nextProjectileId++}`,
         ownerId: player.id,
         fromPlayer: true,
-        x: player.x + Math.cos(finalAngle) * 28,
-        y: player.y + Math.sin(finalAngle) * 28,
-        vx: Math.cos(finalAngle) * speed,
-        vy: Math.sin(finalAngle) * speed,
+        x: startX + pVx * advanceSec,
+        y: startY + pVy * advanceSec,
+        vx: pVx,
+        vy: pVy,
         radius,
         damage: Math.round(stats.attackDamage * this.currentMutation.playerDamageMultiplier * critMult),
         color,
         bouncesRemaining: stats.bulletBounces + this.currentMutation.bulletBouncesBonus,
         piercesRemaining: player.classType === 'PICARO' ? 1 : 0,
         createdAt: now,
-        lifetimeMs: stats.bulletLifetimeMs,
+        lifetimeMs: Math.max(100, stats.bulletLifetimeMs - pingDelay),
         isExplosive: player.classType === 'MAGO',
         explosionRadius: player.classType === 'MAGO' ? 75 : 0,
         isCrit,
@@ -1379,6 +1506,31 @@ export class DungeonRoom {
     this.checkLiveDirectorIntervention(now);
     this.checkRoomClearance();
 
+    // Record world history for melee/AoE lag rewind (last 650ms)
+    this.worldHistory.push({
+      timestamp: now,
+      enemies: this.enemies.map(e => ({ id: e.id, x: Math.round(e.x), y: Math.round(e.y), radius: e.radius })),
+    });
+    if (this.worldHistory.length > 18) {
+      this.worldHistory.shift();
+    }
+
+    // Periodic delta compression sync trigger (every 20 ticks = 1s baseline)
+    this.staticSyncTickCounter++;
+    if (this.staticSyncTickCounter >= 20) {
+      this.staticSyncTickCounter = 0;
+      this.heartsDirty = true;
+      this.barrelsDirty = true;
+      this.hazardsDirty = true;
+    }
+
+    // Disconnected player timeout check (25s grace period)
+    for (const [id, p] of Object.entries(this.players)) {
+      if (p.isDisconnected && p.disconnectedAt && now - p.disconnectedAt > 25000) {
+        this.removePlayer(id);
+      }
+    }
+
     // Keep recent FX events for 220ms (~4-5 ticks) so packets stay tiny
     this.recentEvents = this.recentEvents.filter(ev => now - ev.timestamp < 220);
 
@@ -1392,9 +1544,9 @@ export class DungeonRoom {
   }
 
   /**
-   * Resolves Circle-vs-AABB collision against closed interior Labyrinth Walls.
+   * Resolves Circle-vs-AABB collision against closed interior Labyrinth Walls with tangential sliding.
    */
-  public resolveWallCollisions(entity: { x: number; y: number }, radius: number): boolean {
+  public resolveWallCollisions(entity: { x: number; y: number; vx?: number; vy?: number }, radius: number): boolean {
     let collided = false;
     for (const w of this.walls) {
       if (w.isOpen) continue;
@@ -1406,20 +1558,33 @@ export class DungeonRoom {
       if (distSq < radius * radius) {
         collided = true;
         const dist = Math.sqrt(distSq);
+        let nx = 0;
+        let ny = 0;
         if (dist > 0.001) {
+          nx = dx / dist;
+          ny = dy / dist;
           const overlap = radius - dist;
-          entity.x += (dx / dist) * overlap;
-          entity.y += (dy / dist) * overlap;
+          entity.x += nx * overlap;
+          entity.y += ny * overlap;
         } else {
           const leftPen = entity.x - w.x;
           const rightPen = w.x + w.width - entity.x;
           const topPen = entity.y - w.y;
           const botPen = w.y + w.height - entity.y;
           const minPen = Math.min(leftPen, rightPen, topPen, botPen);
-          if (minPen === leftPen) entity.x = w.x - radius;
-          else if (minPen === rightPen) entity.x = w.x + w.width + radius;
-          else if (minPen === topPen) entity.y = w.y - radius;
-          else entity.y = w.y + w.height + radius;
+          if (minPen === leftPen) { entity.x = w.x - radius; nx = -1; ny = 0; }
+          else if (minPen === rightPen) { entity.x = w.x + w.width + radius; nx = 1; ny = 0; }
+          else if (minPen === topPen) { entity.y = w.y - radius; nx = 0; ny = -1; }
+          else { entity.y = w.y + w.height + radius; nx = 0; ny = 1; }
+        }
+
+        // Tangential wall sliding (preserves momentum parallel to the wall)
+        if (typeof entity.vx === 'number' && typeof entity.vy === 'number') {
+          const vDotN = entity.vx * nx + entity.vy * ny;
+          if (vDotN < 0) {
+            entity.vx -= vDotN * nx;
+            entity.vy -= vDotN * ny;
+          }
         }
       }
     }
@@ -1493,6 +1658,7 @@ export class DungeonRoom {
           createdAt: now,
         }
       );
+      this.heartsDirty = true;
 
       // Grant every player a Mythic Relic from the secret vault!
       const mythicPool = MOCK_RELICS.filter(r => r.rarity === 'MYTHIC');
@@ -1777,12 +1943,17 @@ export class DungeonRoom {
           }
         }
         this.hazards.splice(i, 1);
+        this.hazardsDirty = true;
         continue;
       }
 
       if (h.type === 'SPIKE_TRAP') {
         const cycle = (now + i * 500) % 3400;
-        h.active = cycle >= 2200; // Spikes up for 1.2s every 3.4s
+        const newActive = cycle >= 2200; // Spikes up for 1.2s every 3.4s
+        if (h.active !== newActive) {
+          h.active = newActive;
+          this.hazardsDirty = true;
+        }
         if (h.active && isDoTTick) {
           for (const p of Object.values(this.players)) {
             if (p.isAlive && !p.isDashing && Math.hypot(p.x - h.x, p.y - h.y) < h.radius) {
@@ -1832,6 +2003,7 @@ export class DungeonRoom {
             e.stunUntil = now + 1800;
             this.triggerExplosion(h.x, h.y, 90, h.damage, h.ownerId, 'FIRE', now);
             this.hazards.splice(i, 1);
+            this.hazardsDirty = true;
             break;
           }
         }
@@ -1899,8 +2071,8 @@ export class DungeonRoom {
 
       if (p.isDashing && now >= p.dashEndsAt) {
         p.isDashing = false;
-        p.vx *= 0.3;
-        p.vy *= 0.3;
+        p.vx *= 0.55;
+        p.vy *= 0.55;
       }
 
       // Only server-integrate position if player is a bot, dashing, or hasn't sent client-predicted coords in 90ms
@@ -1910,15 +2082,22 @@ export class DungeonRoom {
         p.y += p.vy * dt;
       }
 
-      // Pillar physical collision
+      // Pillar physical collision with tangential sliding
       for (const pil of this.pillars) {
         const dx = p.x - pil.x;
         const dy = p.y - pil.y;
         const dist = Math.hypot(dx, dy);
         const minDist = pil.radius + 18;
         if (dist < minDist && dist > 0.001) {
-          p.x = pil.x + (dx / dist) * minDist;
-          p.y = pil.y + (dy / dist) * minDist;
+          const nx = dx / dist;
+          const ny = dy / dist;
+          p.x = pil.x + nx * minDist;
+          p.y = pil.y + ny * minDist;
+          const vDotN = p.vx * nx + p.vy * ny;
+          if (vDotN < 0) {
+            p.vx -= vDotN * nx;
+            p.vy -= vDotN * ny;
+          }
         }
       }
 
@@ -1942,22 +2121,30 @@ export class DungeonRoom {
         }
 
         if (dist < 34) {
+          let picked = false;
           if (pType === 'GOLD') {
             p.gold += h.healAmount;
             this.telemetry.totalGoldCollected += h.healAmount;
             this.hearts.splice(i, 1);
+            picked = true;
           } else if (pType === 'SHIELD_ORB') {
             p.shieldHp = Math.min(100, p.shieldHp + h.healAmount);
             this.hearts.splice(i, 1);
+            picked = true;
           } else if (pType === 'FRENZY_ORB') {
             p.combo += 8;
             p.maxCombo = Math.max(p.maxCombo, p.combo);
             p.comboExpiresAt = now + 6000;
             p.skillCooldownEndsAt = 0; // Instant skill reset!
             this.hearts.splice(i, 1);
+            picked = true;
           } else if (p.currentHp < p.maxHp) {
             p.currentHp = Math.min(p.maxHp, p.currentHp + h.healAmount);
             this.hearts.splice(i, 1);
+            picked = true;
+          }
+          if (picked) {
+            this.heartsDirty = true;
           }
         }
       }
@@ -2056,6 +2243,7 @@ export class DungeonRoom {
             durationMs: 1350,
             damage: 18,
           });
+          this.hazardsDirty = true;
         }
       }
 
@@ -2215,6 +2403,7 @@ export class DungeonRoom {
               durationMs: 1350,
               damage: e.damage,
             });
+            this.hazardsDirty = true;
 
             for (let s = -1; s <= 1; s++) {
               const a = angleToTarget + s * 0.28;
@@ -2399,6 +2588,7 @@ export class DungeonRoom {
                 durationMs: 4800,
                 damage: 8,
               });
+              this.hazardsDirty = true;
             }
           }
         } else {
@@ -2766,6 +2956,7 @@ export class DungeonRoom {
             durationMs: 5500,
             damage: 14,
           });
+          this.hazardsDirty = true;
         }
       } else if (e.bossPattern === 'METEOR_RAIN') {
         for (const p of Object.values(this.players)) {
@@ -2785,6 +2976,7 @@ export class DungeonRoom {
               durationMs: e.type === 'BOSS_ARACHNID' ? 4500 : 1250,
               damage: e.type === 'BOSS_ARACHNID' ? 12 : e.damage + 4,
             });
+            this.hazardsDirty = true;
           }
         }
       } else if (e.bossPattern === 'LASER_SWEEP') {
@@ -2971,6 +3163,7 @@ export class DungeonRoom {
           if (Math.hypot(b.x - p.x, b.y - p.y) < b.radius + p.radius) {
             hitBarrel = true;
             this.barrels.splice(bi, 1);
+            this.barrelsDirty = true;
             const el = b.type === 'FROST' ? 'ICE' : b.type === 'TOXIC' ? 'POISON' : 'FIRE';
             this.triggerExplosion(b.x, b.y, 125, 65 + this.roomIndex * 12, p.ownerId, el, now);
             break;
@@ -3300,6 +3493,7 @@ export class DungeonRoom {
           createdAt: now,
         });
       }
+      this.heartsDirty = true;
     }
   }
 
@@ -3327,6 +3521,7 @@ export class DungeonRoom {
         durationMs: 1500,
         damage: 20,
       });
+      this.hazardsDirty = true;
     }
 
     const candidate = this.enemies.find(e => !e.isBoss && !e.isElite);
@@ -3688,6 +3883,9 @@ export class DungeonRoom {
         combo: p.combo,
         maxCombo: p.maxCombo,
         ...(p.reviveProgress ? { reviveProgress: Math.round(p.reviveProgress * 100) / 100 } : {}),
+        ...(typeof p.lastProcessedSeq === 'number' ? { seq: p.lastProcessedSeq } : {}),
+        ...(typeof p.ping === 'number' ? { ping: p.ping } : {}),
+        ...(p.isDisconnected ? { isDisconnected: true } : {}),
       };
     }
 
@@ -3737,7 +3935,7 @@ export class DungeonRoom {
       ...(pr.element && pr.element !== 'NONE' ? { element: pr.element } : {}),
     }));
 
-    return {
+    const tick = {
       r: this.roomIndex,
       c: this.isRoomCleared(),
       wv: this.currentWave,
@@ -3762,13 +3960,19 @@ export class DungeonRoom {
       p: playersTick,
       e: enemiesTick,
       pr: projectilesTick,
-      h: this.hearts.map(ht => ({ ...ht, x: Math.round(ht.x), y: Math.round(ht.y) })),
-      b: this.barrels.map(br => ({ ...br, x: Math.round(br.x), y: Math.round(br.y) })),
-      hz: this.hazards.map(hz => ({ ...hz, x: Math.round(hz.x), y: Math.round(hz.y) })),
+      ...(this.heartsDirty ? { h: this.hearts.map(ht => ({ ...ht, x: Math.round(ht.x), y: Math.round(ht.y) })) } : {}),
+      ...(this.barrelsDirty ? { b: this.barrels.map(br => ({ ...br, x: Math.round(br.x), y: Math.round(br.y) })) } : {}),
+      ...(this.hazardsDirty ? { hz: this.hazards.map(hz => ({ ...hz, x: Math.round(hz.x), y: Math.round(hz.y) })) } : {}),
       ...(this.recentEvents.length > 0 ? { ev: this.recentEvents } : {}),
       da: Math.round(this.directorAnger),
       ...(now - this.directorDialogue.timestamp < 800 ? { dd: this.directorDialogue } : {}),
     };
+
+    this.heartsDirty = false;
+    this.barrelsDirty = false;
+    this.hazardsDirty = false;
+
+    return tick;
   }
 
   public broadcastState(volatile = false): void {

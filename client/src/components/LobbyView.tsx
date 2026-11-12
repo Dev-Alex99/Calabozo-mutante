@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { PlayerClass, GameWorldState, CLASS_CONFIGS } from '../types';
-import { Users, Copy, Check, Play, Bot, Trash2, Sparkles } from 'lucide-react';
+import { Users, Copy, Check, Play, Bot, Trash2, Sparkles, Volume2 } from 'lucide-react';
 import { sfx } from '../audio/sfx';
 
 interface Props {
@@ -14,6 +14,7 @@ interface Props {
   onStartGame: () => void;
   isLoading: boolean;
   errorMessage: string | null;
+  onOpenAudio?: () => void;
 }
 
 export const LobbyView: React.FC<Props> = ({
@@ -27,6 +28,7 @@ export const LobbyView: React.FC<Props> = ({
   onStartGame,
   isLoading,
   errorMessage,
+  onOpenAudio,
 }) => {
   const [playerName, setPlayerName] = useState(() => localStorage.getItem('calabozo_name') || 'Cruzado');
   const [roomCodeInput, setRoomCodeInput] = useState('');
@@ -41,6 +43,7 @@ export const LobbyView: React.FC<Props> = ({
 
   const handleCopyCode = () => {
     if (!world?.code) return;
+    sfx.playUiClick();
     navigator.clipboard.writeText(world.code);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -89,7 +92,7 @@ export const LobbyView: React.FC<Props> = ({
 
   const handleSelectClass = (clsId: PlayerClass) => {
     setSelectedClass(clsId);
-    sfx.playShoot();
+    sfx.playWeaponAttack(clsId);
     if (isInsideRoom) {
       onChangeClass(clsId);
     }
@@ -106,6 +109,17 @@ export const LobbyView: React.FC<Props> = ({
         <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#78716c]"></div>
         <div className="absolute bottom-2 left-2 w-2 h-2 rounded-full bg-[#78716c]"></div>
         <div className="absolute bottom-2 right-2 w-2 h-2 rounded-full bg-[#78716c]"></div>
+
+        {/* Audio Settings Trigger */}
+        {onOpenAudio && (
+          <button
+            onClick={onOpenAudio}
+            className="absolute top-4 right-4 p-2 rounded bg-[#1c1917] hover:bg-[#292524] border border-[#44403c] text-[#a8a29e] hover:text-[#f5f5f4] transition"
+            title="Ajustes de Sonido y Música (M)"
+          >
+            <Volume2 size={16} />
+          </button>
+        )}
 
         {/* Title & Crest */}
         <div className="flex items-center gap-2 mb-1">
@@ -191,7 +205,7 @@ export const LobbyView: React.FC<Props> = ({
             {/* Tabs: Create vs Join */}
             <div className="flex border-b border-[#292524] mt-1">
               <button
-                onClick={() => setActiveTab('CREATE')}
+                onClick={() => { sfx.playUiClick(); setActiveTab('CREATE'); }}
                 className={`flex-1 py-2 text-xs font-cinzel font-bold border-b-2 transition ${
                   activeTab === 'CREATE'
                     ? 'border-[#d97706] text-[#d97706]'
@@ -201,7 +215,7 @@ export const LobbyView: React.FC<Props> = ({
                 FORJAR MAZMORRA
               </button>
               <button
-                onClick={() => setActiveTab('JOIN')}
+                onClick={() => { sfx.playUiClick(); setActiveTab('JOIN'); }}
                 className={`flex-1 py-2 text-xs font-cinzel font-bold border-b-2 transition ${
                   activeTab === 'JOIN'
                     ? 'border-[#d97706] text-[#d97706]'

@@ -81,6 +81,27 @@ export interface PlayerEntity {
   revivesCount: number;
   synergiesTriggered: number;
   title?: string;
+  lastProcessedSeq?: number;
+  ping?: number;
+  isDisconnected?: boolean;
+  disconnectedAt?: number;
+}
+
+export interface PlayerInputPayload {
+  code: string;
+  seq?: number;
+  clientTime?: number;
+  moveX: number;
+  moveY: number;
+  angle: number;
+  isAttacking?: boolean;
+  isDashing?: boolean;
+  isUsingSkill?: boolean;
+  x?: number;
+  y?: number;
+  vx?: number;
+  vy?: number;
+  roomIndex?: number;
 }
 
 export type EnemyType =
