@@ -208,6 +208,55 @@ export class GameRenderer {
       );
     }
 
+    // 4.2. Interior Labyrinth Walls & Cracked Secret Walls
+    if (world.room.walls) {
+      for (const wall of world.room.walls) {
+        SpriteModels.drawLabyrinthWall(ctx, wall, this.totalTime);
+      }
+    }
+
+    // 4.3. Co-op Runic Synchronization Seals & Energy Tethers to the Central Eye
+    if (world.room.seals && world.room.seals.length > 0) {
+      const cx = roomW / 2;
+      const cy = roomH / 2;
+      for (const seal of world.room.seals) {
+        ctx.save();
+        ctx.strokeStyle = seal.isActivated
+          ? 'rgba(34, 197, 94, 0.48)'
+          : seal.progress > 0
+          ? 'rgba(56, 189, 248, 0.55)'
+          : 'rgba(168, 85, 247, 0.25)';
+        ctx.lineWidth = seal.isActivated || seal.progress > 0 ? 3 : 1.8;
+        ctx.setLineDash([10, 6]);
+        ctx.beginPath();
+        ctx.moveTo(seal.x, seal.y);
+        ctx.lineTo(cx, cy);
+        ctx.stroke();
+        ctx.restore();
+
+        SpriteModels.drawSyncSeal(ctx, seal, this.totalTime);
+      }
+
+      // Central Eye Status Callout
+      const activeCount = world.room.seals.filter(s => s.isActivated).length;
+      const totalCount = world.room.seals.length;
+      ctx.save();
+      ctx.font = 'bold 12px "Cinzel", serif';
+      ctx.textAlign = 'center';
+      if (world.room.isCleared) {
+        ctx.fillStyle = '#4ade80';
+        ctx.fillText('✓ OJO ARCANO DESBLOQUEADO — ¡PORTALES ABIERTOS!', cx, cy - 66);
+      } else {
+        ctx.fillStyle = activeCount === totalCount ? '#4ade80' : '#c084fc';
+        ctx.fillText(
+          `👁️ OJO RÚNICO CENTRAL: ${activeCount}/${totalCount} SELLOS SINCRONIZADOS`,
+          cx,
+          cy - 66
+        );
+      }
+      ctx.restore();
+    }
+
     // 4.5. Environmental & Skill Hazards (Lava, Poison Spores, Spike Traps, Arcane Vortex, Meteor Strikes)
     if (world.room.hazards) {
       for (const h of world.room.hazards) {
@@ -299,7 +348,15 @@ export class GameRenderer {
     // 11. Lighting, Ambient Warmth, Fog of War & Drifting Dust Motes
     this.drawAmbianceAndFog(ctx, world, localPlayer, roomW, roomH, dt);
 
+    // 11.5. Tactical On-Screen Compass Arrows (drawn OVER fog so players never lose track of enemies, seals, or open doors!)
+    if (localPlayer && localPlayer.isAlive) {
+      this.drawTacticalCompass(ctx, world, localPlayer, roomW, roomH);
+    }
+
     ctx.restore();
+
+    // 12. Screen-Space Labyrinth Mini-Map (Top-Right Corner)
+    this.drawMiniMap(ctx, world, localPlayer, canvasWidth);
   }
 
   private ensureOffscreenBackground(world: GameWorldState, w: number, h: number) {
@@ -601,21 +658,227 @@ export class GameRenderer {
     ctx.globalAlpha = 1.0;
 
     if (world.room.mutation.lowVisibility && localPlayer) {
-      const visRadius = world.room.mutation.visibilityRadius || 270;
+      const visRadius = world.room.mutation.visibilityRadius || 410;
 
       const grad = ctx.createRadialGradient(
         localPlayer.x,
         localPlayer.y,
-        visRadius * 0.35,
+        visRadius * 0.4,
         localPlayer.x,
         localPlayer.y,
         visRadius
       );
       grad.addColorStop(0, 'rgba(0, 0, 0, 0)');
-      grad.addColorStop(1, 'rgba(10, 8, 7, 0.94)');
+      grad.addColorStop(1, 'rgba(10, 8, 7, 0.68)');
 
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, w, h);
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * Draws sleek tactical directional arrows around the player pointing to:
+   * - Open North/East/West Exit Portals when the room is cleared
+   * - Remaining distant enemies (> 290px away) so no enemy ever hides in the labyrinth
+   * - Unactivated Co-op Runic Seals
+   */
+  private drawTacticalCompass(
+    ctx: CanvasRenderingContext2D,
+    world: GameWorldState,
+    localPlayer: PlayerEntity,
+    roomW: number,
+    roomH: number
+  ) {
+    const px = localPlayer.x;
+    const py = localPlayer.y;
+    const ringRadius = 64;
+
+    ctx.save();
+    if (world.room.isCleared) {
+      // Point clearly toward the Open North Portal!
+      const doorX = roomW / 2;
+      const doorY = 30;
+      const dist = Math.hypot(doorX - px, doorY - py);
+      if (dist > 110) {
+        const angle = Math.atan2(doorY - py, doorX - px);
+        const ax = px + Math.cos(angle) * ringRadius;
+        const ay = py + Math.sin(angle) * ringRadius;
+
+        ctx.save();
+        ctx.translate(ax, ay);
+        ctx.rotate(angle);
+        ctx.fillStyle = '#22c55e';
+        ctx.strokeStyle = '#052e16';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(12, 0);
+        ctx.lineTo(-8, -8);
+        ctx.lineTo(-4, 0);
+        ctx.lineTo(-8, 8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.fillStyle = '#4ade80';
+        ctx.font = 'bold 10px "Cinzel", serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('🚪 SALIDA', ax, ay - 12);
+      }
+    } else {
+      // 1. Arrows to distant enemies (> 290px away)
+      let shownEnemies = 0;
+      for (const e of world.enemies) {
+        const dist = Math.hypot(e.x - px, e.y - py);
+        if (dist > 290 && shownEnemies < 4) {
+          shownEnemies++;
+          const angle = Math.atan2(e.y - py, e.x - px);
+          const ax = px + Math.cos(angle) * ringRadius;
+          const ay = py + Math.sin(angle) * ringRadius;
+
+          ctx.save();
+          ctx.translate(ax, ay);
+          ctx.rotate(angle);
+          ctx.fillStyle = e.isBoss ? '#facc15' : '#ef4444';
+          ctx.beginPath();
+          ctx.moveTo(9, 0);
+          ctx.lineTo(-6, -5.5);
+          ctx.lineTo(-3, 0);
+          ctx.lineTo(-6, 5.5);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+
+      // 2. Arrows to unactivated Co-op Seals
+      if (world.room.seals) {
+        for (const s of world.room.seals) {
+          if (s.isActivated) continue;
+          const dist = Math.hypot(s.x - px, s.y - py);
+          if (dist > 180) {
+            const angle = Math.atan2(s.y - py, s.x - px);
+            const ax = px + Math.cos(angle) * (ringRadius + 10);
+            const ay = py + Math.sin(angle) * (ringRadius + 10);
+
+            ctx.save();
+            ctx.translate(ax, ay);
+            ctx.rotate(angle);
+            ctx.fillStyle = '#38bdf8';
+            ctx.beginPath();
+            ctx.moveTo(8, 0);
+            ctx.lineTo(-5, -5);
+            ctx.lineTo(-5, 5);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  /**
+   * Renders the Live Labyrinth Mini-Map in the top-right corner of the screen.
+   */
+  private drawMiniMap(
+    ctx: CanvasRenderingContext2D,
+    world: GameWorldState,
+    localPlayer: PlayerEntity | undefined,
+    canvasWidth: number
+  ) {
+    const mapW = 176;
+    const mapH = 126;
+    const mapX = canvasWidth - mapW - 16;
+    const mapY = 74;
+    const roomW = world.room.width || 2000;
+    const roomH = world.room.height || 1450;
+    const scaleX = mapW / roomW;
+    const scaleY = mapH / roomH;
+
+    ctx.save();
+
+    // Gothic Frame Background
+    ctx.fillStyle = 'rgba(12, 10, 9, 0.84)';
+    ctx.strokeStyle = world.room.isCleared ? '#22c55e' : '#78350f';
+    ctx.lineWidth = 2;
+    ctx.fillRect(mapX, mapY, mapW, mapH);
+    ctx.strokeRect(mapX, mapY, mapW, mapH);
+
+    // Header Label (Wave & Enemies / Portal Status)
+    ctx.fillStyle = 'rgba(12, 10, 9, 0.9)';
+    ctx.fillRect(mapX, mapY - 20, mapW, 18);
+    ctx.font = 'bold 10px "Cinzel", serif';
+    ctx.textAlign = 'center';
+    const curWave = world.room.currentWave || 1;
+    const totWaves = world.room.totalWaves || 1;
+    ctx.fillStyle = world.room.isCleared ? '#4ade80' : '#fbbf24';
+    ctx.fillText(
+      world.room.isCleared
+        ? '✓ PORTALES ABIERTOS'
+        : `OLEADA ${curWave}/${totWaves} • ${world.enemies.length} ENEMIGOS`,
+      mapX + mapW / 2,
+      mapY - 7
+    );
+
+    // Interior Labyrinth Walls & Secret Wall
+    if (world.room.walls) {
+      for (const w of world.room.walls) {
+        if (w.isOpen) continue;
+        ctx.fillStyle = w.isSecretWall ? '#facc15' : '#57534e';
+        ctx.fillRect(
+          mapX + w.x * scaleX,
+          mapY + w.y * scaleY,
+          Math.max(2, w.width * scaleX),
+          Math.max(2, w.height * scaleY)
+        );
+      }
+    }
+
+    // Co-op Runic Seals
+    if (world.room.seals) {
+      for (const s of world.room.seals) {
+        ctx.fillStyle = s.isActivated ? '#22c55e' : '#38bdf8';
+        ctx.beginPath();
+        ctx.arc(mapX + s.x * scaleX, mapY + s.y * scaleY, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Doors (North, East, West)
+    const doors = world.room.doors;
+    if (doors?.NORTH) {
+      ctx.fillStyle = doors.NORTH.open ? '#22c55e' : '#dc2626';
+      ctx.fillRect(mapX + mapW / 2 - 8, mapY, 16, 4);
+    }
+    if (doors?.EAST && doors.EAST.open) {
+      ctx.fillStyle = '#f59e0b';
+      ctx.fillRect(mapX + mapW - 4, mapY + mapH / 2 - 6, 4, 12);
+    }
+    if (doors?.WEST && doors.WEST.open) {
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillRect(mapX, mapY + mapH / 2 - 6, 4, 12);
+    }
+
+    // Enemies (Red dots, Gold for Boss)
+    for (const e of world.enemies) {
+      ctx.fillStyle = e.isBoss ? '#facc15' : '#ef4444';
+      ctx.beginPath();
+      ctx.arc(mapX + e.x * scaleX, mapY + e.y * scaleY, e.isBoss ? 4.5 : 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Players (Local = bright gold, Allies = sky blue)
+    for (const p of Object.values(world.players)) {
+      if (!p.isAlive) continue;
+      const isMe = localPlayer && p.id === localPlayer.id;
+      ctx.fillStyle = isMe ? '#fde047' : '#60a5fa';
+      ctx.beginPath();
+      ctx.arc(mapX + p.x * scaleX, mapY + p.y * scaleY, isMe ? 3.8 : 3, 0, Math.PI * 2);
+      ctx.fill();
     }
 
     ctx.restore();

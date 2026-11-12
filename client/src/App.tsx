@@ -282,11 +282,43 @@ export const App: React.FC = () => {
         }
       }
 
+      const nextIsBoss = (base.room.roomIndex + 1) % 3 === 0;
+      const updatedDoors = tick.c
+        ? {
+            ...base.room.doors,
+            NORTH: { ...base.room.doors.NORTH, open: true },
+            EAST: { ...base.room.doors.EAST, open: !nextIsBoss },
+            WEST: { ...base.room.doors.WEST, open: !nextIsBoss },
+          }
+        : base.room.doors;
+
+      const updatedSeals =
+        tick.s && base.room.seals
+          ? base.room.seals.map(seal => {
+              const found = tick.s.find((ts: any) => ts.id === seal.id);
+              return found ? { ...seal, progress: found.progress, isActivated: found.isActivated } : seal;
+            })
+          : base.room.seals;
+
+      const updatedWalls =
+        tick.sw && base.room.walls
+          ? base.room.walls.map(wall => {
+              const found = tick.sw.find((tw: any) => tw.id === wall.id);
+              return found ? { ...wall, hp: found.hp, isOpen: found.isOpen } : wall;
+            })
+          : base.room.walls;
+
       const merged: GameWorldState = {
         ...base,
         room: {
           ...base.room,
           isCleared: tick.c,
+          doors: updatedDoors,
+          currentWave: tick.wv ?? base.room.currentWave,
+          totalWaves: tick.tw ?? base.room.totalWaves,
+          secretFound: tick.sf ?? base.room.secretFound,
+          seals: updatedSeals,
+          walls: updatedWalls,
           hearts: tick.h || base.room.hearts,
           barrels: tick.b || base.room.barrels,
           hazards: tick.hz || base.room.hazards,
@@ -600,14 +632,44 @@ export const App: React.FC = () => {
             }
           }
 
+          // Resolve interior Labyrinth wall collisions locally (0ms lag)
+          const walls = currentWorld.room.walls || [];
+          const playerRadius = 18;
+          for (const w of walls) {
+            if (w.isOpen) continue;
+            const closestX = Math.max(w.x, Math.min(sim.x, w.x + w.width));
+            const closestY = Math.max(w.y, Math.min(sim.y, w.y + w.height));
+            const dx = sim.x - closestX;
+            const dy = sim.y - closestY;
+            const distSq = dx * dx + dy * dy;
+            if (distSq < playerRadius * playerRadius) {
+              const dist = Math.sqrt(distSq);
+              if (dist > 0.001) {
+                const overlap = playerRadius - dist;
+                sim.x += (dx / dist) * overlap;
+                sim.y += (dy / dist) * overlap;
+              } else {
+                const leftPen = sim.x - w.x;
+                const rightPen = w.x + w.width - sim.x;
+                const topPen = sim.y - w.y;
+                const botPen = w.y + w.height - sim.y;
+                const minPen = Math.min(leftPen, rightPen, topPen, botPen);
+                if (minPen === leftPen) sim.x = w.x - playerRadius;
+                else if (minPen === rightPen) sim.x = w.x + w.width + playerRadius;
+                else if (minPen === topPen) sim.y = w.y - playerRadius;
+                else sim.y = w.y + w.height + playerRadius;
+              }
+            }
+          }
+
           // Clamp to room bounds (allowing door entry when cleared)
-          const W = currentWorld.room.width || 1200;
-          const H = currentWorld.room.height || 800;
+          const W = currentWorld.room.width || 2000;
+          const H = currentWorld.room.height || 1450;
           const pad = 48;
           const isCleared = currentWorld.room.isCleared;
           const doors = currentWorld.room.doors;
 
-          if (sim.y < pad && !(isCleared && doors?.NORTH?.open && Math.abs(sim.x - W / 2) < 58)) {
+          if (sim.y < pad && !((isCleared || doors?.NORTH?.open) && Math.abs(sim.x - W / 2) < 82)) {
             sim.y = pad;
             sim.vy = 0;
           }
@@ -615,11 +677,11 @@ export const App: React.FC = () => {
             sim.y = H - pad;
             sim.vy = 0;
           }
-          if (sim.x < pad && !(isCleared && doors?.WEST?.open && Math.abs(sim.y - H / 2) < 58)) {
+          if (sim.x < pad && !((isCleared || doors?.WEST?.open) && Math.abs(sim.y - H / 2) < 82)) {
             sim.x = pad;
             sim.vx = 0;
           }
-          if (sim.x > W - pad && !(isCleared && doors?.EAST?.open && Math.abs(sim.y - H / 2) < 58)) {
+          if (sim.x > W - pad && !((isCleared || doors?.EAST?.open) && Math.abs(sim.y - H / 2) < 82)) {
             sim.x = W - pad;
             sim.vx = 0;
           }

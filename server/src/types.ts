@@ -24,7 +24,7 @@ export interface Relic {
   name: string;
   lore: string;
   icon: string;
-  rarity?: 'COMMON' | 'RARE' | 'LEGENDARY' | 'CURSED';
+  rarity?: 'COMMON' | 'RARE' | 'LEGENDARY' | 'CURSED' | 'MYTHIC';
   buffDescription: string;
   curseDescription?: string;
   modifiers: {
@@ -90,6 +90,13 @@ export type EnemyType =
   | 'MURCIELAGO'
   | 'GOLEM'
   | 'NIGROMANTE'
+  | 'ESPIRITU'
+  | 'KAMIKAZE'
+  | 'MIMICO'
+  | 'ARANA'
+  | 'CENTINELA'
+  | 'BOSS_TITAN'
+  | 'BOSS_ARACHNID'
   | 'BOSS_DIRECTOR';
 
 export type EliteModifier = 'VAMPIRICO' | 'EXPLOSIVO' | 'TORMENTA' | 'FRENETICO' | 'BLINDADO';
@@ -274,6 +281,28 @@ export interface DirectorDialogue {
   timestamp: number;
 }
 
+export interface WallSegment {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  isSecretWall?: boolean;
+  hp?: number;
+  maxHp?: number;
+  isOpen?: boolean;
+}
+
+export interface SyncSeal {
+  id: string;
+  x: number;
+  y: number;
+  radius: number;
+  progress: number;
+  isActivated: boolean;
+  label?: string;
+}
+
 export interface RoomState {
   roomIndex: number;
   totalRooms: number;
@@ -288,6 +317,11 @@ export interface RoomState {
   pillars: PillarEntity[];
   barrels: BarrelEntity[];
   hazards: HazardZone[];
+  walls: WallSegment[];
+  seals: SyncSeal[];
+  currentWave: number;
+  totalWaves: number;
+  secretFound?: boolean;
   width: number;
   height: number;
 }

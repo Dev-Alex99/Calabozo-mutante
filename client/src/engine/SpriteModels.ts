@@ -1,4 +1,14 @@
-import { PlayerEntity, EnemyEntity, HeartPickup, AltarEntity, BarrelEntity, HazardZone, DoorState } from '../types';
+import {
+  PlayerEntity,
+  EnemyEntity,
+  HeartPickup,
+  AltarEntity,
+  BarrelEntity,
+  HazardZone,
+  DoorState,
+  WallSegment,
+  SyncSeal,
+} from '../types';
 
 /**
  * Handcrafted, artistic 2D procedural sprite rendering engine.
@@ -689,7 +699,11 @@ export class SpriteModels {
     // White flash on damage hit (fast alpha overlay without GPU-stalling ctx.filter)
     const isFlashing = enemy.flashUntil && now < enemy.flashUntil;
 
-    if (enemy.isBoss) {
+    if (enemy.type === 'BOSS_TITAN') {
+      this.drawBossTitan(ctx, enemy, time);
+    } else if (enemy.type === 'BOSS_ARACHNID') {
+      this.drawBossArachnid(ctx, enemy, time);
+    } else if (enemy.isBoss) {
       this.drawBossDirector(ctx, enemy, time);
     } else if (enemy.type === 'SLIME' || enemy.type === 'MINI_SLIME') {
       this.drawSlime(ctx, enemy, time);
@@ -699,6 +713,16 @@ export class SpriteModels {
       this.drawGolem(ctx, enemy, time);
     } else if (enemy.type === 'NIGROMANTE') {
       this.drawNigromante(ctx, enemy, time);
+    } else if (enemy.type === 'ESPIRITU') {
+      this.drawEspiritu(ctx, enemy, time);
+    } else if (enemy.type === 'KAMIKAZE') {
+      this.drawKamikaze(ctx, enemy, time);
+    } else if (enemy.type === 'MIMICO') {
+      this.drawMimico(ctx, enemy, time);
+    } else if (enemy.type === 'ARANA') {
+      this.drawArana(ctx, enemy, time);
+    } else if (enemy.type === 'CENTINELA') {
+      this.drawCentinela(ctx, enemy, time);
     } else {
       this.drawMurcielago(ctx, enemy, time);
     }
@@ -809,6 +833,272 @@ export class SpriteModels {
     ctx.fillRect(1, -8 + floatY, 2, 2);
 
     this.drawGothicHealthBar(ctx, 0, -enemy.radius - 10, 36, 4, enemy.currentHp, enemy.maxHp);
+  }
+
+  private static drawEspiritu(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
+    const floatY = Math.sin(time * 5 + enemy.x) * 4;
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.22)';
+    ctx.beginPath();
+    ctx.arc(0, floatY, 22, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Ethereal Wraith Shroud
+    ctx.fillStyle = 'rgba(14, 165, 233, 0.78)';
+    ctx.strokeStyle = '#bae6fd';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, -18 + floatY);
+    ctx.quadraticCurveTo(16, -4 + floatY, 12, 16 + floatY);
+    ctx.lineTo(4, 10 + floatY);
+    ctx.lineTo(0, 17 + floatY);
+    ctx.lineTo(-4, 10 + floatY);
+    ctx.lineTo(-12, 16 + floatY);
+    ctx.quadraticCurveTo(-16, -4 + floatY, 0, -18 + floatY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Glowing Frost Eyes
+    ctx.fillStyle = '#e0f2fe';
+    ctx.fillRect(-5, -6 + floatY, 3, 3);
+    ctx.fillRect(2, -6 + floatY, 3, 3);
+
+    this.drawGothicHealthBar(ctx, 0, -enemy.radius - 10, 34, 4, enemy.currentHp, enemy.maxHp);
+  }
+
+  private static drawKamikaze(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
+    const pulse = Math.abs(Math.sin(time * 14)) * 3.5;
+    // Danger blast ring
+    ctx.strokeStyle = 'rgba(249, 115, 22, 0.55)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, 18 + pulse, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Volatile Magma Imp Body
+    ctx.fillStyle = '#ea580c';
+    ctx.strokeStyle = '#fde047';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.arc(0, 0, 14 + pulse * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Horns & Fuse
+    ctx.fillStyle = '#7c2d12';
+    ctx.beginPath();
+    ctx.moveTo(-8, -10);
+    ctx.lineTo(-13, -18);
+    ctx.lineTo(-3, -12);
+    ctx.moveTo(8, -10);
+    ctx.lineTo(13, -18);
+    ctx.lineTo(3, -12);
+    ctx.fill();
+
+    // Crazed Yellow Eyes
+    ctx.fillStyle = '#fef08a';
+    ctx.fillRect(-5, -3, 3, 3);
+    ctx.fillRect(2, -3, 3, 3);
+
+    this.drawGothicHealthBar(ctx, 0, -enemy.radius - 10, 32, 4, enemy.currentHp, enemy.maxHp);
+  }
+
+  private static drawMimico(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
+    const isAwake = enemy.aiState !== 'IDLE';
+    const chomp = isAwake ? Math.abs(Math.sin(time * 12)) * 6 : 0;
+
+    // Chest Base
+    ctx.fillStyle = '#78350f';
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2;
+    ctx.fillRect(-18, -10, 36, 24);
+    ctx.strokeRect(-18, -10, 36, 24);
+
+    // Chest Lid (raises when awake to reveal fangs!)
+    ctx.fillStyle = '#92400e';
+    ctx.fillRect(-19, -18 - chomp, 38, 10);
+    ctx.strokeRect(-19, -18 - chomp, 38, 10);
+
+    if (isAwake) {
+      // Maw & Sharp Fangs
+      ctx.fillStyle = '#450a0a';
+      ctx.fillRect(-15, -9 - chomp * 0.5, 30, 8 + chomp * 0.5);
+      ctx.fillStyle = '#fef3c7';
+      for (let fx = -12; fx <= 12; fx += 6) {
+        ctx.beginPath();
+        ctx.moveTo(fx - 2, -8 - chomp * 0.5);
+        ctx.lineTo(fx, -2);
+        ctx.lineTo(fx + 2, -8 - chomp * 0.5);
+        ctx.fill();
+      }
+      // Glowing Predator Eye
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.arc(0, -13 - chomp, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      this.drawGothicHealthBar(ctx, 0, -enemy.radius - 12, 42, 4, enemy.currentHp, enemy.maxHp);
+    } else {
+      // Gold Lock Clasp (looks like a tempting treasure chest!)
+      ctx.fillStyle = '#facc15';
+      ctx.fillRect(-4, -10, 8, 9);
+    }
+  }
+
+  private static drawArana(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
+    const legSwing = Math.sin(time * 16 + enemy.x) * 4;
+
+    // 8 Articulated Arachnid Legs
+    ctx.strokeStyle = '#365314';
+    ctx.lineWidth = 2;
+    for (let i = -1; i <= 1; i += 2) {
+      for (let l = 0; l < 4; l++) {
+        const ly = -8 + l * 5;
+        ctx.beginPath();
+        ctx.moveTo(i * 8, ly);
+        ctx.lineTo(i * 19, ly - 4 + (l % 2 === 0 ? legSwing : -legSwing));
+        ctx.lineTo(i * 24, ly + 4);
+        ctx.stroke();
+      }
+    }
+
+    // Venomous Abdomen
+    ctx.fillStyle = '#1a2e05';
+    ctx.strokeStyle = '#84cc16';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(0, 4, 13, 15, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Hourglass Venom Marking & Multiple Eyes
+    ctx.fillStyle = '#84cc16';
+    ctx.fillRect(-3, 2, 6, 6);
+    ctx.fillStyle = '#ef4444';
+    ctx.fillRect(-5, -10, 2.5, 2.5);
+    ctx.fillRect(2.5, -10, 2.5, 2.5);
+    ctx.fillRect(-2, -12, 4, 2);
+
+    this.drawGothicHealthBar(ctx, 0, -enemy.radius - 10, 36, 4, enemy.currentHp, enemy.maxHp);
+  }
+
+  private static drawCentinela(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
+    const rot = time * 2.2;
+
+    // Outer Floating Runic Brass Ring
+    ctx.save();
+    ctx.rotate(rot);
+    ctx.strokeStyle = '#c084fc';
+    ctx.lineWidth = 2.2;
+    ctx.setLineDash([8, 5]);
+    ctx.beginPath();
+    ctx.arc(0, 0, 20, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // Arcane All-Seeing Eye Core
+    ctx.fillStyle = '#3b0764';
+    ctx.strokeStyle = '#e879f9';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Glowing Sclera & Pupil
+    ctx.fillStyle = '#fdf4ff';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 10, 6.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#a21caf';
+    ctx.beginPath();
+    ctx.arc(0, 0, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    this.drawGothicHealthBar(ctx, 0, -enemy.radius - 10, 38, 4, enemy.currentHp, enemy.maxHp);
+  }
+
+  private static drawBossTitan(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
+    const isPhase2 = (enemy.bossPhase || 1) >= 2;
+    const pulse = Math.sin(time * 5) * 4;
+
+    // Volcanic Aura Circle
+    ctx.fillStyle = isPhase2 ? 'rgba(220, 38, 38, 0.24)' : 'rgba(234, 88, 12, 0.18)';
+    ctx.beginPath();
+    ctx.arc(0, 0, enemy.radius + 16 + pulse, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Colossal Obsidian & Magma Armor
+    ctx.fillStyle = '#1c1917';
+    ctx.strokeStyle = isPhase2 ? '#ef4444' : '#f97316';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.roundRect(-42, -40, 84, 80, [14]);
+    ctx.fill();
+    ctx.stroke();
+
+    // Molten Furnace Core in Chest
+    ctx.fillStyle = '#f97316';
+    ctx.beginPath();
+    ctx.arc(0, 4, 18 + pulse * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fef08a';
+    ctx.beginPath();
+    ctx.arc(0, 4, 9, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Crowned Horn Visor
+    ctx.fillStyle = '#fde047';
+    ctx.fillRect(-16, -24, 10, 5);
+    ctx.fillRect(6, -24, 10, 5);
+
+    this.drawGothicHealthBar(ctx, 0, -enemy.radius - 18, 92, 8, enemy.currentHp, enemy.maxHp);
+    ctx.fillStyle = '#fdba74';
+    ctx.font = 'bold 12px "Cinzel", serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(enemy.name, 0, -enemy.radius - 28);
+  }
+
+  private static drawBossArachnid(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
+    const isPhase2 = (enemy.bossPhase || 1) >= 2;
+    const legWave = Math.sin(time * 10) * 6;
+
+    // 8 Giant Scythe Legs
+    ctx.strokeStyle = isPhase2 ? '#a3e635' : '#65a30d';
+    ctx.lineWidth = 3.5;
+    for (let side = -1; side <= 1; side += 2) {
+      for (let i = 0; i < 4; i++) {
+        const yOff = -22 + i * 14;
+        ctx.beginPath();
+        ctx.moveTo(side * 26, yOff);
+        ctx.lineTo(side * 54, yOff - 10 + (i % 2 === 0 ? legWave : -legWave));
+        ctx.lineTo(side * 66, yOff + 10);
+        ctx.stroke();
+      }
+    }
+
+    // Queen Carapace
+    ctx.fillStyle = '#1a2e05';
+    ctx.strokeStyle = '#84cc16';
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.ellipse(0, 6, 36, 42, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Cluster of 6 Glowing Emerald/Crimson Eyes
+    ctx.fillStyle = isPhase2 ? '#ef4444' : '#a3e635';
+    for (let ex = -12; ex <= 12; ex += 8) {
+      ctx.beginPath();
+      ctx.arc(ex, -22, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    this.drawGothicHealthBar(ctx, 0, -enemy.radius - 18, 92, 8, enemy.currentHp, enemy.maxHp);
+    ctx.fillStyle = '#bef264';
+    ctx.font = 'bold 12px "Cinzel", serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(enemy.name, 0, -enemy.radius - 28);
   }
 
   /**
@@ -2072,5 +2362,129 @@ export class SpriteModels {
     ctx.strokeStyle = '#44403c';
     ctx.lineWidth = 1;
     ctx.strokeRect(x - width / 2 - 1, y - height / 2 - 1, width + 2, height + 2);
+  }
+
+  /**
+   * Renders interior Labyrinth Stone Walls and Destructible Secret Walls!
+   */
+  public static drawLabyrinthWall(ctx: CanvasRenderingContext2D, wall: WallSegment, time: number) {
+    if (wall.isOpen) {
+      // Draw shattered rubble on the floor where the secret wall stood
+      ctx.save();
+      ctx.fillStyle = 'rgba(250, 204, 21, 0.14)';
+      ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
+      ctx.restore();
+      return;
+    }
+
+    ctx.save();
+    // Drop shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.fillRect(wall.x + 6, wall.y + 8, wall.width, wall.height);
+
+    // Chiseled Stone Body
+    ctx.fillStyle = wall.isSecretWall ? '#292524' : '#1c1917';
+    ctx.strokeStyle = wall.isSecretWall ? '#f59e0b' : '#44403c';
+    ctx.lineWidth = wall.isSecretWall ? 2.5 : 2;
+    ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
+    ctx.strokeRect(wall.x, wall.y, wall.width, wall.height);
+
+    // Inner stone bevel
+    ctx.strokeStyle = 'rgba(168, 162, 158, 0.16)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(wall.x + 4, wall.y + 4, Math.max(4, wall.width - 8), Math.max(4, wall.height - 8));
+
+    if (wall.isSecretWall) {
+      // Glowing golden runic cracks indicating a destructible Secret Wall!
+      const shimmer = 0.55 + Math.sin(time * 6) * 0.35;
+      ctx.strokeStyle = `rgba(250, 204, 21, ${shimmer})`;
+      ctx.lineWidth = 2;
+      const cx = wall.x + wall.width / 2;
+      const cy = wall.y + wall.height / 2;
+      ctx.beginPath();
+      ctx.moveTo(cx - 8, cy - 22);
+      ctx.lineTo(cx + 4, cy - 4);
+      ctx.lineTo(cx - 6, cy + 12);
+      ctx.lineTo(cx + 7, cy + 26);
+      ctx.stroke();
+
+      ctx.fillStyle = '#fde047';
+      ctx.font = 'bold 10px "Cinzel", serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('🗝️ MURO SECRETO (ATACA)', cx, wall.y - 8);
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * Renders Co-op Runic Synchronization Seals on the labyrinth floor.
+   */
+  public static drawSyncSeal(ctx: CanvasRenderingContext2D, seal: SyncSeal, time: number) {
+    ctx.save();
+    ctx.translate(seal.x, seal.y);
+
+    const activeColor = seal.isActivated ? '#22c55e' : seal.progress > 0 ? '#38bdf8' : '#a855f7';
+    const glowFill = seal.isActivated
+      ? 'rgba(34, 197, 94, 0.22)'
+      : seal.progress > 0
+      ? 'rgba(56, 189, 248, 0.24)'
+      : 'rgba(168, 85, 247, 0.16)';
+
+    // Floor aura
+    ctx.fillStyle = glowFill;
+    ctx.beginPath();
+    ctx.arc(0, 0, seal.radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Base Runic Ring
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, seal.radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Progress Arc (0% -> 100%)
+    const pct = seal.isActivated ? 1 : Math.max(0.08, seal.progress);
+    ctx.strokeStyle = activeColor;
+    ctx.lineWidth = 4.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, seal.radius, -Math.PI / 2, -Math.PI / 2 + pct * Math.PI * 2);
+    ctx.stroke();
+
+    // Inner Rotating Eye Sigil
+    ctx.save();
+    ctx.rotate(time * (seal.isActivated ? 1.5 : 3));
+    ctx.strokeStyle = activeColor;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(-18, -18, 36, 36);
+    ctx.restore();
+
+    // Center Eye Crest
+    ctx.fillStyle = activeColor;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 14, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#09090b';
+    ctx.beginPath();
+    ctx.arc(0, 0, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Label & Percentage
+    ctx.fillStyle = seal.isActivated ? '#86efac' : '#e0f2fe';
+    ctx.font = 'bold 10px "Cinzel", serif';
+    ctx.textAlign = 'center';
+    const pctText = seal.isActivated
+      ? `✓ ${seal.label || 'SELLO'} ACTIVO`
+      : `👁️ ${seal.label || 'SELLO RÚNICO'} (${Math.round(seal.progress * 100)}%)`;
+    ctx.fillText(pctText, 0, -seal.radius - 10);
+
+    if (!seal.isActivated) {
+      ctx.fillStyle = '#fde047';
+      ctx.font = 'bold 9px "Inter", sans-serif';
+      ctx.fillText('⚡ PÁRATE AQUÍ PARA SINCRONIZAR', 0, seal.radius + 16);
+    }
+
+    ctx.restore();
   }
 }

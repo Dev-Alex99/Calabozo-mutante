@@ -22,9 +22,12 @@ import {
   RoomEncounterType,
   RoomMutation,
   RoomState,
+  SyncSeal,
+  WallSegment,
   WorldEventFX,
 } from '../types.js';
 import { DungeonDirector } from '../ai/DungeonDirector.js';
+import { MOCK_RELICS } from '../ai/mockDirector.js';
 
 const ELITE_MODIFIERS: EliteModifier[] = ['VAMPIRICO', 'EXPLOSIVO', 'TORMENTA', 'FRENETICO', 'BLINDADO'];
 const BOT_NAMES: Record<PlayerClass, string[]> = {
@@ -47,6 +50,13 @@ export class DungeonRoom {
   public pillars: PillarEntity[] = [];
   public barrels: BarrelEntity[] = [];
   public hazards: HazardZone[] = [];
+  public walls: WallSegment[] = [];
+  public seals: SyncSeal[] = [];
+  public currentWave = 1;
+  public totalWaves = 1;
+  public secretFound = false;
+  public roomWidth = config.game.roomWidth;
+  public roomHeight = config.game.roomHeight;
   public recentEvents: WorldEventFX[] = [];
   public currentMutation: RoomMutation;
   public chestRelics: Relic[] = [];
@@ -126,8 +136,8 @@ export class DungeonRoom {
       avatarIndex,
       isHost,
       isBot,
-      x: config.game.roomWidth / 2 + (Object.keys(this.players).length * 48 - 72),
-      y: config.game.roomHeight - 130,
+      x: this.roomWidth / 2 + (Object.keys(this.players).length * 48 - 72),
+      y: this.roomHeight - 130,
       vx: 0,
       vy: 0,
       angle: -Math.PI / 2,
@@ -219,8 +229,8 @@ export class DungeonRoom {
     if (!p) return;
     this.emitFX({
       type: 'PING',
-      x: Math.max(60, Math.min(config.game.roomWidth - 60, x)),
-      y: Math.max(60, Math.min(config.game.roomHeight - 60, y)),
+      x: Math.max(60, Math.min(this.roomWidth - 60, x)),
+      y: Math.max(60, Math.min(this.roomHeight - 60, y)),
       text: kind || `📍 ${p.name}`,
       color: '#f59e0b',
     });
@@ -265,14 +275,18 @@ export class DungeonRoom {
       p.revivesCount = 0;
       p.synergiesTriggered = 0;
       p.title = undefined;
-      p.x = config.game.roomWidth / 2 + (idx * 45 - 65);
-      p.y = config.game.roomHeight - 130;
+      p.x = this.roomWidth / 2 + (idx * 45 - 65);
+      p.y = this.roomHeight - 130;
       p.vx = 0;
       p.vy = 0;
     });
 
     await this.setupRoom(1, 'STANDARD');
     this.startLoop();
+  }
+
+  public isRoomCleared(): boolean {
+    return this.enemies.length === 0 && this.currentWave >= this.totalWaves;
   }
 
   /**
@@ -292,7 +306,8 @@ export class DungeonRoom {
 
     try {
       this.roomIndex = index;
-      const isBoss = index === this.totalRooms || (index > this.totalRooms && index % 3 === 0);
+      // Boss battle every 3 levels (Room 3, 6, 9, 12...)
+      const isBoss = index % 3 === 0;
       this.encounterType = isBoss ? 'BOSS' : encounterType;
       this.projectiles = [];
       this.hearts = [];
@@ -300,15 +315,30 @@ export class DungeonRoom {
       this.chestClaimedBy = [];
       this.roomClearAnnounced = false;
       this.interventionTriggeredInRoom = false;
+      this.secretFound = false;
+      this.currentWave = 1;
+      this.totalWaves = isBoss || this.encounterType === 'SANCTUARY' ? 1 : index === 1 ? 2 : 3;
       this.lastClientSyncAt = {};
 
-      const W = config.game.roomWidth;
-      const H = config.game.roomHeight;
+      // Dynamic room dimensions: Huge labyrinths for exploration, focused arenas for Bosses
+      if (isBoss) {
+        this.roomWidth = 1650;
+        this.roomHeight = 1150;
+      } else if (this.encounterType === 'SANCTUARY') {
+        this.roomWidth = 1550;
+        this.roomHeight = 1080;
+      } else {
+        this.roomWidth = config.game.roomWidth; // 2000
+        this.roomHeight = config.game.roomHeight; // 1450
+      }
+
+      const W = this.roomWidth;
+      const H = this.roomHeight;
 
       // Immediately move players away from doors before any async work!
       Object.values(this.players).forEach((p, idx) => {
         p.x = W / 2 + (idx * 44 - 66);
-        p.y = H - 125;
+        p.y = H - 130;
         p.vx = 0;
         p.vy = 0;
       });
@@ -320,108 +350,122 @@ export class DungeonRoom {
       };
       this.chestRelics = roomData.relics;
 
-    // 1. Setup Physical Gothic Stone Pillars (match Renderer positions)
-    this.pillars = isBoss
-      ? [
-          { id: 'pil_1', x: W * 0.2, y: H * 0.32, radius: 24 },
-          { id: 'pil_2', x: W * 0.8, y: H * 0.32, radius: 24 },
-          { id: 'pil_3', x: W * 0.2, y: H * 0.72, radius: 24 },
-          { id: 'pil_4', x: W * 0.8, y: H * 0.72, radius: 24 },
-        ]
-      : [
-          { id: 'pil_1', x: W * 0.22, y: H * 0.28, radius: 25 },
-          { id: 'pil_2', x: W * 0.78, y: H * 0.28, radius: 25 },
-          { id: 'pil_3', x: W * 0.22, y: H * 0.72, radius: 25 },
-          { id: 'pil_4', x: W * 0.78, y: H * 0.72, radius: 25 },
-        ];
+      // 1. Setup Labyrinth Walls, Secret Chamber & Co-op Runic Seals
+      this.generateLabyrinthLayout(index, isBoss, this.encounterType);
 
-    // 2. Setup Interactive Barrels (Explosive, Frost, Toxic)
-    this.barrels = [];
-    const barrelTypes: Array<'EXPLOSIVE' | 'FROST' | 'TOXIC'> = ['EXPLOSIVE', 'FROST', 'TOXIC'];
-    const barrelPositions = [
-      { x: W * 0.34, y: H * 0.45 },
-      { x: W * 0.66, y: H * 0.45 },
-      { x: W * 0.5, y: H * 0.26 },
-    ];
-    barrelPositions.forEach((pos, idx) => {
-      if (idx < 2 || Math.random() < 0.75) {
-        this.barrels.push({
-          id: `barrel_${index}_${idx}`,
-          x: pos.x + (Math.random() * 40 - 20),
-          y: pos.y + (Math.random() * 30 - 15),
-          radius: 18,
-          type: barrelTypes[(index + idx) % barrelTypes.length],
-        });
+      // 2. Setup Physical Gothic Stone Pillars
+      this.pillars = isBoss
+        ? [
+            { id: 'pil_1', x: W * 0.24, y: H * 0.32, radius: 26 },
+            { id: 'pil_2', x: W * 0.76, y: H * 0.32, radius: 26 },
+            { id: 'pil_3', x: W * 0.24, y: H * 0.7, radius: 26 },
+            { id: 'pil_4', x: W * 0.76, y: H * 0.7, radius: 26 },
+          ]
+        : [
+            { id: 'pil_1', x: W * 0.2, y: H * 0.26, radius: 25 },
+            { id: 'pil_2', x: W * 0.8, y: H * 0.26, radius: 25 },
+            { id: 'pil_3', x: W * 0.2, y: H * 0.74, radius: 25 },
+            { id: 'pil_4', x: W * 0.8, y: H * 0.74, radius: 25 },
+            { id: 'pil_5', x: W * 0.38, y: H * 0.5, radius: 22 },
+            { id: 'pil_6', x: W * 0.62, y: H * 0.5, radius: 22 },
+          ];
+
+      // 3. Setup Interactive Barrels across sectors (Explosive, Frost, Toxic)
+      this.barrels = [];
+      const barrelTypes: Array<'EXPLOSIVE' | 'FROST' | 'TOXIC'> = ['EXPLOSIVE', 'FROST', 'TOXIC'];
+      const barrelPositions = [
+        { x: W * 0.33, y: H * 0.44 },
+        { x: W * 0.67, y: H * 0.44 },
+        { x: W * 0.5, y: H * 0.26 },
+        { x: W * 0.16, y: H * 0.52 },
+        { x: W * 0.84, y: H * 0.52 },
+      ];
+      barrelPositions.forEach((pos, idx) => {
+        if (idx < 3 || Math.random() < 0.8) {
+          this.barrels.push({
+            id: `barrel_${index}_${idx}`,
+            x: pos.x + (Math.random() * 40 - 20),
+            y: pos.y + (Math.random() * 30 - 15),
+            radius: 18,
+            type: barrelTypes[(index + idx) % barrelTypes.length],
+          });
+        }
+      });
+
+      // 4. Setup Environmental Hazards based on Mutation
+      this.hazards = [];
+      const now = Date.now();
+      const hazType = this.currentMutation.hazardType;
+      if (hazType === 'LAVA_PITS') {
+        this.hazards.push(
+          { id: 'haz_1', type: 'LAVA', x: W * 0.34, y: H * 0.36, radius: 56, active: true, createdAt: now, durationMs: 999999, damage: 12 },
+          { id: 'haz_2', type: 'LAVA', x: W * 0.66, y: H * 0.36, radius: 56, active: true, createdAt: now, durationMs: 999999, damage: 12 },
+          { id: 'haz_3', type: 'LAVA', x: W * 0.5, y: H * 0.62, radius: 50, active: true, createdAt: now, durationMs: 999999, damage: 12 },
+          { id: 'haz_4', type: 'LAVA', x: W * 0.2, y: H * 0.52, radius: 48, active: true, createdAt: now, durationMs: 999999, damage: 12 },
+          { id: 'haz_5', type: 'LAVA', x: W * 0.8, y: H * 0.52, radius: 48, active: true, createdAt: now, durationMs: 999999, damage: 12 }
+        );
+      } else if (hazType === 'POISON_SPORES') {
+        this.hazards.push(
+          { id: 'haz_1', type: 'POISON_CLOUD', x: W * 0.35, y: H * 0.48, radius: 60, active: true, createdAt: now, durationMs: 999999, damage: 9 },
+          { id: 'haz_2', type: 'POISON_CLOUD', x: W * 0.65, y: H * 0.48, radius: 60, active: true, createdAt: now, durationMs: 999999, damage: 9 },
+          { id: 'haz_3', type: 'POISON_CLOUD', x: W * 0.5, y: H * 0.28, radius: 54, active: true, createdAt: now, durationMs: 999999, damage: 9 }
+        );
+      } else if (hazType === 'SPIKE_TRAPS') {
+        this.hazards.push(
+          { id: 'spike_1', type: 'SPIKE_TRAP', x: W * 0.36, y: H * 0.36, radius: 38, active: false, createdAt: now, durationMs: 999999, damage: 18 },
+          { id: 'spike_2', type: 'SPIKE_TRAP', x: W * 0.64, y: H * 0.36, radius: 38, active: false, createdAt: now, durationMs: 999999, damage: 18 },
+          { id: 'spike_3', type: 'SPIKE_TRAP', x: W * 0.36, y: H * 0.64, radius: 38, active: false, createdAt: now, durationMs: 999999, damage: 18 },
+          { id: 'spike_4', type: 'SPIKE_TRAP', x: W * 0.64, y: H * 0.64, radius: 38, active: false, createdAt: now, durationMs: 999999, damage: 18 }
+        );
       }
-    });
 
-    // 3. Setup Environmental Hazards based on Mutation
-    this.hazards = [];
-    const now = Date.now();
-    const hazType = this.currentMutation.hazardType;
-    if (hazType === 'LAVA_PITS') {
-      this.hazards.push(
-        { id: 'haz_1', type: 'LAVA', x: W * 0.36, y: H * 0.36, radius: 52, active: true, createdAt: now, durationMs: 999999, damage: 12 },
-        { id: 'haz_2', type: 'LAVA', x: W * 0.64, y: H * 0.36, radius: 52, active: true, createdAt: now, durationMs: 999999, damage: 12 },
-        { id: 'haz_3', type: 'LAVA', x: W * 0.5, y: H * 0.6, radius: 46, active: true, createdAt: now, durationMs: 999999, damage: 12 }
-      );
-    } else if (hazType === 'POISON_SPORES') {
-      this.hazards.push(
-        { id: 'haz_1', type: 'POISON_CLOUD', x: W * 0.35, y: H * 0.5, radius: 58, active: true, createdAt: now, durationMs: 999999, damage: 9 },
-        { id: 'haz_2', type: 'POISON_CLOUD', x: W * 0.65, y: H * 0.5, radius: 58, active: true, createdAt: now, durationMs: 999999, damage: 9 }
-      );
-    } else if (hazType === 'SPIKE_TRAPS') {
-      this.hazards.push(
-        { id: 'spike_1', type: 'SPIKE_TRAP', x: W * 0.38, y: H * 0.38, radius: 36, active: false, createdAt: now, durationMs: 999999, damage: 18 },
-        { id: 'spike_2', type: 'SPIKE_TRAP', x: W * 0.62, y: H * 0.38, radius: 36, active: false, createdAt: now, durationMs: 999999, damage: 18 },
-        { id: 'spike_3', type: 'SPIKE_TRAP', x: W * 0.38, y: H * 0.62, radius: 36, active: false, createdAt: now, durationMs: 999999, damage: 18 },
-        { id: 'spike_4', type: 'SPIKE_TRAP', x: W * 0.62, y: H * 0.62, radius: 36, active: false, createdAt: now, durationMs: 999999, damage: 18 }
-      );
-    }
+      // 5. Setup Altar of Pacts & Armory
+      const discount = this.encounterType === 'SANCTUARY' ? 0.65 : 1.0;
+      this.altar = {
+        x: W * 0.34,
+        y: H * 0.52,
+        pact: roomData.pact,
+        weaponUpgradeCost: Math.round((35 + index * 15) * discount),
+        healCost: Math.round(25 * discount),
+        shieldCost: Math.round(30 * discount),
+      };
 
-    // 4. Setup Altar of Pacts & Armory
-    const discount = this.encounterType === 'SANCTUARY' ? 0.65 : 1.0;
-    this.altar = {
-      x: W * 0.28,
-      y: H * 0.52,
-      pact: roomData.pact,
-      weaponUpgradeCost: Math.round((35 + index * 15) * discount),
-      healCost: Math.round(25 * discount),
-      shieldCost: Math.round(30 * discount),
-    };
+      // 6. Reposition & Heal Players (Sanctuary gives +60% heal, normal gives +35%)
+      const healRatio = this.encounterType === 'SANCTUARY' ? 0.6 : 0.35;
+      Object.values(this.players).forEach((p, idx) => {
+        p.x = W / 2 + (idx * 44 - 66);
+        p.y = H - 130;
+        p.vx = 0;
+        p.vy = 0;
+        p.isAlive = true;
+        p.reviveProgress = 0;
+        p.invulnerableUntil = Date.now() + 1400;
+        p.currentHp = Math.min(p.maxHp, p.currentHp + Math.floor(p.maxHp * healRatio));
+        if (this.encounterType === 'SANCTUARY') {
+          p.shieldHp = Math.max(p.shieldHp, 30);
+        }
+      });
 
-    // 5. Reposition & Heal Players (Sanctuary gives +60% heal, normal gives +35%)
-    const healRatio = this.encounterType === 'SANCTUARY' ? 0.6 : 0.35;
-    Object.values(this.players).forEach((p, idx) => {
-      p.x = W / 2 + (idx * 44 - 66);
-      p.y = H - 125;
-      p.vx = 0;
-      p.vy = 0;
-      p.isAlive = true;
-      p.reviveProgress = 0;
-      p.invulnerableUntil = Date.now() + 1200;
-      p.currentHp = Math.min(p.maxHp, p.currentHp + Math.floor(p.maxHp * healRatio));
-      if (this.encounterType === 'SANCTUARY') {
-        p.shieldHp = Math.max(p.shieldHp, 30);
-      }
-    });
-
-    this.directorDialogue = {
-      speaker: 'Director del Calabozo',
-      text:
-        this.encounterType === 'ELITE'
-          ? `¡CÁMARA ÉLITE MALDITA! ${this.currentMutation.directorRoast}`
-          : this.encounterType === 'SANCTUARY'
-          ? 'Un Santuario del Pacto... disfruten su breve respiro y gasten su oro antes de morir.'
-          : this.currentMutation.directorRoast,
-      mood: this.encounterType === 'ELITE' ? 'ANGRY' : 'MOCKING',
-      timestamp: Date.now(),
-    };
+      this.directorDialogue = {
+        speaker: 'Director del Calabozo',
+        text:
+          this.encounterType === 'ELITE'
+            ? `¡LABERINTO ÉLITE MALDITO! ${this.currentMutation.directorRoast}`
+            : this.encounterType === 'SANCTUARY'
+            ? 'Un Santuario del Pacto... disfruten su breve respiro y gasten su oro antes de morir.'
+            : this.currentMutation.directorRoast,
+        mood: this.encounterType === 'ELITE' ? 'ANGRY' : 'MOCKING',
+        timestamp: Date.now(),
+      };
 
       if (isBoss) {
+        this.currentWave = 1;
+        this.totalWaves = 1;
         await this.spawnBoss();
       } else {
-        this.spawnEnemiesForRoom(index, this.encounterType);
+        this.currentWave = 1;
+        this.totalWaves = this.encounterType === 'SANCTUARY' ? 1 : index === 1 ? 2 : 3;
+        this.spawnEnemiesForRoom(index, this.encounterType, 1);
       }
 
       this.director.prefetchNextRoom(index + 1, this.totalRooms);
@@ -431,30 +475,185 @@ export class DungeonRoom {
     }
   }
 
-  private spawnEnemiesForRoom(index: number, encounterType: RoomEncounterType): void {
-    this.enemies = [];
+  /**
+   * Generates interior Labyrinth stone walls, a Cracked Secret Wall leading to a hidden vault,
+   * and Co-op Runic Synchronization Seals linked to the Central Eye!
+   */
+  private generateLabyrinthLayout(index: number, isBoss: boolean, encounterType: RoomEncounterType): void {
+    this.walls = [];
+    this.seals = [];
+    if (isBoss) return;
+
+    const W = this.roomWidth;
+    const H = this.roomHeight;
+    const layoutVariant = index % 3;
+
+    if (encounterType !== 'SANCTUARY') {
+      if (layoutVariant === 1) {
+        // Variant 1: Twin Wing Bastions + North/South Choke Barriers
+        this.walls.push(
+          { id: `w_${index}_1`, x: Math.round(W * 0.28), y: Math.round(H * 0.24), width: 38, height: Math.round(H * 0.22) },
+          { id: `w_${index}_2`, x: Math.round(W * 0.28), y: Math.round(H * 0.56), width: 38, height: Math.round(H * 0.21) },
+          { id: `w_${index}_3`, x: Math.round(W * 0.72) - 38, y: Math.round(H * 0.24), width: 38, height: Math.round(H * 0.22) },
+          { id: `w_${index}_4`, x: Math.round(W * 0.72) - 38, y: Math.round(H * 0.56), width: 38, height: Math.round(H * 0.21) },
+          { id: `w_${index}_5`, x: Math.round(W * 0.41), y: Math.round(H * 0.23), width: Math.round(W * 0.18), height: 36 },
+          { id: `w_${index}_6`, x: Math.round(W * 0.41), y: Math.round(H * 0.74), width: Math.round(W * 0.18), height: 36 }
+        );
+      } else if (layoutVariant === 2) {
+        // Variant 2: Cross Labyrinth Corridors with Central Ritual Courtyard
+        this.walls.push(
+          { id: `w_${index}_1`, x: Math.round(W * 0.15), y: Math.round(H * 0.36), width: Math.round(W * 0.21), height: 36 },
+          { id: `w_${index}_2`, x: Math.round(W * 0.64), y: Math.round(H * 0.36), width: Math.round(W * 0.21), height: 36 },
+          { id: `w_${index}_3`, x: Math.round(W * 0.15), y: Math.round(H * 0.64), width: Math.round(W * 0.21), height: 36 },
+          { id: `w_${index}_4`, x: Math.round(W * 0.64), y: Math.round(H * 0.64), width: Math.round(W * 0.21), height: 36 },
+          { id: `w_${index}_5`, x: Math.round(W * 0.34), y: Math.round(H * 0.16), width: 36, height: Math.round(H * 0.16) },
+          { id: `w_${index}_6`, x: Math.round(W * 0.66) - 36, y: Math.round(H * 0.16), width: 36, height: Math.round(H * 0.16) }
+        );
+      } else {
+        // Variant 0: Fortress Zig-Zag Chambers
+        this.walls.push(
+          { id: `w_${index}_1`, x: Math.round(W * 0.25), y: Math.round(H * 0.32), width: Math.round(W * 0.16), height: 36 },
+          { id: `w_${index}_2`, x: Math.round(W * 0.59), y: Math.round(H * 0.32), width: Math.round(W * 0.16), height: 36 },
+          { id: `w_${index}_3`, x: Math.round(W * 0.25), y: Math.round(H * 0.66), width: Math.round(W * 0.16), height: 36 },
+          { id: `w_${index}_4`, x: Math.round(W * 0.59), y: Math.round(H * 0.66), width: Math.round(W * 0.16), height: 36 },
+          { id: `w_${index}_5`, x: Math.round(W * 0.25), y: Math.round(H * 0.32), width: 36, height: Math.round(H * 0.18) },
+          { id: `w_${index}_6`, x: Math.round(W * 0.75) - 36, y: Math.round(H * 0.5), width: 36, height: Math.round(H * 0.18) }
+        );
+      }
+
+      // Secret Room (Sala Oculta) in Top-Left or Top-Right corner behind a destructible runic wall!
+      const secretOnRight = index % 2 === 0;
+      if (secretOnRight) {
+        // Top-Right Secret Vault (x: W - 360 .. W - 40, y: 40 .. 330)
+        this.walls.push(
+          { id: `sec_solid_${index}`, x: W - 360, y: 42, width: 36, height: 155 },
+          {
+            id: `sec_door_${index}`,
+            x: W - 360,
+            y: 197,
+            width: 36,
+            height: 135,
+            isSecretWall: true,
+            hp: 65,
+            maxHp: 65,
+            isOpen: false,
+          },
+          { id: `sec_bot_${index}`, x: W - 360, y: 332, width: 318, height: 36 }
+        );
+      } else {
+        // Top-Left Secret Vault (x: 40 .. 360, y: 40 .. 330)
+        this.walls.push(
+          { id: `sec_solid_${index}`, x: 324, y: 42, width: 36, height: 155 },
+          {
+            id: `sec_door_${index}`,
+            x: 324,
+            y: 197,
+            width: 36,
+            height: 135,
+            isSecretWall: true,
+            hp: 65,
+            maxHp: 65,
+            isOpen: false,
+          },
+          { id: `sec_bot_${index}`, x: 42, y: 332, width: 318, height: 36 }
+        );
+      }
+
+      // Co-op Runic Synchronization Seals (linked to the Central Eye)
+      this.seals = [
+        {
+          id: `seal_${index}_L`,
+          x: Math.round(W * 0.17),
+          y: Math.round(H * 0.5),
+          radius: 52,
+          progress: 0,
+          isActivated: false,
+          label: 'SELLO OESTE',
+        },
+        {
+          id: `seal_${index}_R`,
+          x: Math.round(W * 0.83),
+          y: Math.round(H * 0.5),
+          radius: 52,
+          progress: 0,
+          isActivated: false,
+          label: 'SELLO ESTE',
+        },
+      ];
+
+      if (index >= 4) {
+        this.seals.push({
+          id: `seal_${index}_N`,
+          x: Math.round(W * 0.5),
+          y: Math.round(H * 0.16),
+          radius: 52,
+          progress: 0,
+          isActivated: false,
+          label: 'SELLO NORTE',
+        });
+      }
+    }
+  }
+
+  private spawnEnemiesForRoom(index: number, encounterType: RoomEncounterType, wave = 1): void {
+    if (wave === 1) {
+      this.enemies = [];
+    }
     const playerCount = Math.max(1, Object.keys(this.players).length);
     const coopHpScale = 1 + (playerCount - 1) * 0.25;
     const eliteRoomMult = encounterType === 'ELITE' ? 1.3 : 1.0;
 
     let types: EnemyType[] = [];
     if (encounterType === 'SANCTUARY') {
-      types = ['SLIME', 'ESQUELETO', 'GOLEM'];
+      types = ['SLIME', 'ESQUELETO', 'ESPIRITU', 'GOLEM'];
     } else if (index === 1) {
-      types = ['SLIME', 'SLIME', 'MURCIELAGO'];
+      types =
+        wave === 1
+          ? ['SLIME', 'SLIME', 'MURCIELAGO', 'KAMIKAZE', 'ESQUELETO']
+          : ['ARANA', 'ESPIRITU', 'SLIME', 'MURCIELAGO', 'KAMIKAZE', 'MIMICO'];
     } else if (index === 2) {
-      types = ['SLIME', 'ESQUELETO', 'ESQUELETO', 'MURCIELAGO'];
-    } else if (index === 3) {
-      types = ['GOLEM', 'MURCIELAGO', 'MURCIELAGO', 'SLIME', 'ESQUELETO'];
-    } else if (index === 4) {
-      types = ['NIGROMANTE', 'ESQUELETO', 'ESQUELETO', 'GOLEM', 'MURCIELAGO'];
+      types =
+        wave === 1
+          ? ['SLIME', 'ESQUELETO', 'ARANA', 'KAMIKAZE', 'ESPIRITU', 'MURCIELAGO']
+          : wave === 2
+          ? ['GOLEM', 'CENTINELA', 'ARANA', 'KAMIKAZE', 'ESQUELETO', 'ESPIRITU']
+          : ['NIGROMANTE', 'CENTINELA', 'MIMICO', 'GOLEM', 'KAMIKAZE', 'ARANA'];
+    } else if (index <= 5) {
+      types =
+        wave === 1
+          ? ['GOLEM', 'ARANA', 'ARANA', 'ESPIRITU', 'KAMIKAZE', 'KAMIKAZE', 'ESQUELETO']
+          : wave === 2
+          ? ['NIGROMANTE', 'CENTINELA', 'ESPIRITU', 'ARANA', 'SLIME', 'KAMIKAZE', 'MURCIELAGO']
+          : ['GOLEM', 'NIGROMANTE', 'CENTINELA', 'MIMICO', 'ARANA', 'KAMIKAZE', 'ESPIRITU'];
     } else {
-      types = ['NIGROMANTE', 'GOLEM', 'ESQUELETO', 'ESQUELETO', 'SLIME', 'MURCIELAGO', 'MURCIELAGO'];
+      types =
+        wave === 1
+          ? ['NIGROMANTE', 'CENTINELA', 'GOLEM', 'ARANA', 'ARANA', 'KAMIKAZE', 'KAMIKAZE', 'ESPIRITU']
+          : wave === 2
+          ? ['CENTINELA', 'CENTINELA', 'NIGROMANTE', 'MIMICO', 'GOLEM', 'ARANA', 'KAMIKAZE', 'ESPIRITU']
+          : ['GOLEM', 'GOLEM', 'NIGROMANTE', 'CENTINELA', 'MIMICO', 'ARANA', 'KAMIKAZE', 'KAMIKAZE', 'ESPIRITU'];
     }
 
+    const W = this.roomWidth;
+    const H = this.roomHeight;
+    const spawnSectors = [
+      { x: W * 0.18, y: H * 0.25 },
+      { x: W * 0.82, y: H * 0.25 },
+      { x: W * 0.5, y: H * 0.22 },
+      { x: W * 0.18, y: H * 0.62 },
+      { x: W * 0.82, y: H * 0.62 },
+      { x: W * 0.5, y: H * 0.44 },
+    ];
+
     types.forEach((type, idx) => {
-      const isElite = encounterType === 'ELITE' && (idx === 0 || idx === 1) ? true : index >= 3 && idx === 0 && Math.random() < 0.45;
-      this.createEnemy(type, index, coopHpScale * eliteRoomMult, isElite);
+      const isElite =
+        encounterType === 'ELITE' && (idx === 0 || idx === 1)
+          ? true
+          : (index >= 2 && wave >= 2 && idx === 0) || (index >= 4 && idx === 1 && Math.random() < 0.5);
+      const sec = spawnSectors[(idx + wave) % spawnSectors.length];
+      const spawnX = Math.max(120, Math.min(W - 120, sec.x + (Math.random() * 180 - 90)));
+      const spawnY = Math.max(120, Math.min(H - 260, sec.y + (Math.random() * 140 - 70)));
+      this.createEnemy(type, index, coopHpScale * eliteRoomMult, isElite, spawnX, spawnY);
     });
   }
 
@@ -471,8 +670,8 @@ export class DungeonRoom {
     const eliteHpMult = isElite ? 2.0 : 1.0;
     const eliteMod = isElite ? ELITE_MODIFIERS[Math.floor(Math.random() * ELITE_MODIFIERS.length)] : undefined;
 
-    const x = customX ?? 160 + Math.random() * (config.game.roomWidth - 320);
-    const y = customY ?? 130 + Math.random() * (config.game.roomHeight * 0.42);
+    const x = customX ?? 160 + Math.random() * (this.roomWidth - 320);
+    const y = customY ?? 130 + Math.random() * (this.roomHeight * 0.55);
 
     let baseHp = 42 + roomIdx * 11;
     let radius = 22;
@@ -493,7 +692,7 @@ export class DungeonRoom {
     } else if (type === 'ESQUELETO') {
       baseHp = 35 + roomIdx * 9;
       radius = 18;
-      speed = 78 * speedMult;
+      speed = 82 * speedMult;
       damage = 13 + Math.floor(roomIdx * 1.5);
       color = '#e2e8f0';
       name = 'Esqueleto Francotirador';
@@ -501,7 +700,7 @@ export class DungeonRoom {
     } else if (type === 'MURCIELAGO') {
       baseHp = 26 + roomIdx * 7;
       radius = 15;
-      speed = 142 * speedMult;
+      speed = 145 * speedMult;
       damage = 14 + roomIdx;
       color = '#991b1b';
       name = 'Murciélago Vampiro';
@@ -509,7 +708,7 @@ export class DungeonRoom {
     } else if (type === 'GOLEM') {
       baseHp = 95 + roomIdx * 22;
       radius = 30;
-      speed = 62 * speedMult;
+      speed = 65 * speedMult;
       damage = 22 + roomIdx * 2;
       color = '#57534e';
       name = 'Gólem de Hierro Sísmico';
@@ -522,6 +721,46 @@ export class DungeonRoom {
       color = '#6b21a8';
       name = 'Cultista Abisal';
       cooldown = 2800;
+    } else if (type === 'ESPIRITU') {
+      baseHp = 38 + roomIdx * 10;
+      radius = 18;
+      speed = 115 * speedMult;
+      damage = 14 + roomIdx * 2;
+      color = '#38bdf8';
+      name = 'Espectro de Escarcha';
+      cooldown = 1900;
+    } else if (type === 'KAMIKAZE') {
+      baseHp = 26 + roomIdx * 7;
+      radius = 16;
+      speed = 168 * speedMult;
+      damage = 25 + roomIdx * 2;
+      color = '#f97316';
+      name = 'Diablillo Volátil';
+      cooldown = 900;
+    } else if (type === 'MIMICO') {
+      baseHp = 78 + roomIdx * 18;
+      radius = 23;
+      speed = 148 * speedMult;
+      damage = 22 + roomIdx * 2;
+      color = '#d97706';
+      name = 'Mímico Devorador';
+      cooldown = 1200;
+    } else if (type === 'ARANA') {
+      baseHp = 44 + roomIdx * 11;
+      radius = 19;
+      speed = 134 * speedMult;
+      damage = 15 + roomIdx * 2;
+      color = '#84cc16';
+      name = 'Viuda Tejedora Abisal';
+      cooldown = 2000;
+    } else if (type === 'CENTINELA') {
+      baseHp = 58 + roomIdx * 14;
+      radius = 21;
+      speed = 76 * speedMult;
+      damage = 17 + roomIdx * 2;
+      color = '#c084fc';
+      name = 'Ojo Centinela Arcano';
+      cooldown = 2200;
     }
 
     if (isElite && eliteMod) {
@@ -554,40 +793,70 @@ export class DungeonRoom {
       eliteModifier: eliteMod,
     };
 
+    // Ensure ground enemies don't spawn inside an interior wall
+    if (type !== 'ESPIRITU' && type !== 'MURCIELAGO') {
+      this.resolveWallCollisions(enemy, enemy.radius + 4);
+    }
+
     this.enemies.push(enemy);
     return enemy;
   }
 
   private async spawnBoss(): Promise<void> {
     this.enemies = [];
-    const bossData = await this.director.getBossAdaptation(this.telemetry);
     const playerCount = Math.max(1, Object.keys(this.players).length);
-    const scale = (1 + (playerCount - 1) * 0.3) * (1 + Math.max(0, this.roomIndex - 6) * 0.25);
+    const tier = Math.floor((this.roomIndex - 1) / 3); // 0 at Room 3, 1 at Room 6, 2 at Room 9...
+    const scale = (1 + (playerCount - 1) * 0.3) * (1 + tier * 0.38);
+
+    const bossCycle = this.roomIndex % 9;
+    let bossType: EnemyType = 'BOSS_DIRECTOR';
+    let bossName = 'El Gran Arquitecto del Abismo';
+    let introQuote = '¡Llegaron al final del contrato! ¡Contemplen la furia del Algoritmo Central!';
+    let bossColor = '#b91c1c';
+    let baseBossHp = 1250;
+
+    if (bossCycle === 3) {
+      bossType = 'BOSS_TITAN';
+      bossName = 'Ignis-Vulcan, Coloso de Magma y Cadenas';
+      introQuote = '¡MIS CADENAS FUNDIRÁN SUS ARMADURAS! ¡EL PISO ES MI FRAGUA!';
+      bossColor = '#ea580c';
+      baseBossHp = 920;
+    } else if (bossCycle === 6) {
+      bossType = 'BOSS_ARACHNID';
+      bossName = 'Aracne-Nyx, Reina Tejedora del Vórtice';
+      introQuote = '¡Bienvenidos a mi nido de seda y veneno! ¡Mis crías devorarán sus huesos!';
+      bossColor = '#65a30d';
+      baseBossHp = 1080;
+    } else {
+      const bossData = await this.director.getBossAdaptation(this.telemetry);
+      bossName = bossData.bossName;
+      introQuote = bossData.introQuote;
+    }
 
     this.directorDialogue = {
-      speaker: bossData.bossName,
-      text: bossData.introQuote,
+      speaker: bossName,
+      text: introQuote,
       mood: 'ANGRY',
       timestamp: Date.now(),
     };
 
-    const bossHp = Math.round(1150 * scale);
+    const bossHp = Math.round(baseBossHp * scale);
     this.enemies.push({
-      id: `boss_director_${this.roomIndex}`,
-      type: 'BOSS_DIRECTOR',
-      name: bossData.bossName,
-      x: config.game.roomWidth / 2,
-      y: 220,
+      id: `boss_${bossType}_${this.roomIndex}`,
+      type: bossType,
+      name: bossName,
+      x: this.roomWidth / 2,
+      y: 240,
       vx: 0,
       vy: 0,
       radius: 52,
       currentHp: bossHp,
       maxHp: bossHp,
-      speed: 92 * this.currentMutation.enemySpeedMultiplier,
-      damage: 24,
-      color: '#b91c1c',
+      speed: 96 * this.currentMutation.enemySpeedMultiplier,
+      damage: 22 + tier * 3,
+      color: bossColor,
       lastAttackAt: Date.now(),
-      attackCooldownMs: 1500,
+      attackCooldownMs: 1450,
       stateTimer: 0,
       isBoss: true,
       bossPhase: 1,
@@ -626,11 +895,12 @@ export class DungeonRoom {
       typeof input.y === 'number'
     ) {
       const dist = Math.hypot(input.x - player.x, input.y - player.y);
-      if (dist < 340) {
-        const W = config.game.roomWidth;
-        const H = config.game.roomHeight;
+      if (dist < 380) {
+        const W = this.roomWidth;
+        const H = this.roomHeight;
         player.x = Math.max(32, Math.min(W - 32, input.x));
         player.y = Math.max(32, Math.min(H - 32, input.y));
+        this.resolveWallCollisions(player, 18);
         if (typeof input.vx === 'number' && typeof input.vy === 'number' && !player.isDashing) {
           player.vx = input.vx;
           player.vy = input.vy;
@@ -693,8 +963,8 @@ export class DungeonRoom {
     stats: ReturnType<typeof this.getPlayerEffectiveStats>,
     now: number
   ): void {
-    const W = config.game.roomWidth;
-    const H = config.game.roomHeight;
+    const W = this.roomWidth;
+    const H = this.roomHeight;
 
     if (player.classType === 'GUERRERO') {
       // BALUARTE SÍSMICO: Shockwave stun + Reflective Shield + +30 Shield HP
@@ -711,6 +981,15 @@ export class DungeonRoom {
       });
 
       const shockDamage = Math.round(stats.attackDamage * 1.45);
+      for (const w of this.walls) {
+        if (w.isSecretWall && !w.isOpen) {
+          const cx = w.x + w.width / 2;
+          const cy = w.y + w.height / 2;
+          if (Math.hypot(cx - player.x, cy - player.y) <= 210) {
+            this.damageSecretWall(w, shockDamage * 2, now);
+          }
+        }
+      }
       for (let i = this.enemies.length - 1; i >= 0; i--) {
         const e = this.enemies[i];
         const dist = Math.hypot(e.x - player.x, e.y - player.y);
@@ -1004,7 +1283,7 @@ export class DungeonRoom {
         });
       } else if (pact.type === 'ELITE_AMBUSH') {
         // Spawn an Elite Champion right now; everyone gets +100 Gold & Weapon Level!
-        this.createEnemy('GOLEM', this.roomIndex + 1, 1.2, true, config.game.roomWidth / 2, 220);
+        this.createEnemy('GOLEM', this.roomIndex + 1, 1.2, true, this.roomWidth / 2, 220);
         Object.values(this.players).forEach(p => {
           p.gold += 100;
           p.weaponLevel += 1;
@@ -1072,9 +1351,12 @@ export class DungeonRoom {
 
     const prevPhase = this.phase;
     const prevCleared = this.roomClearAnnounced;
+    const prevWave = this.currentWave;
+    const prevSecret = this.secretFound;
 
     this.updateAIHerbBots(dt, now);
     this.updateHazards(dt, now);
+    this.updateSyncSeals(dt, now);
     this.updatePlayers(dt, now);
     this.updateEnemies(dt, now);
     this.updateProjectiles(dt, now);
@@ -1086,13 +1368,222 @@ export class DungeonRoom {
 
     const hasImportantChange =
       this.phase !== prevPhase ||
-      this.roomClearAnnounced !== prevCleared;
+      this.roomClearAnnounced !== prevCleared ||
+      this.currentWave !== prevWave ||
+      this.secretFound !== prevSecret;
 
     this.broadcastState(!hasImportantChange);
   }
 
   /**
-   * Autonomous AI Companion Heroes (fight, dodge, revive fallen humans, use skills, loot).
+   * Resolves Circle-vs-AABB collision against closed interior Labyrinth Walls.
+   */
+  public resolveWallCollisions(entity: { x: number; y: number }, radius: number): boolean {
+    let collided = false;
+    for (const w of this.walls) {
+      if (w.isOpen) continue;
+      const closestX = Math.max(w.x, Math.min(entity.x, w.x + w.width));
+      const closestY = Math.max(w.y, Math.min(entity.y, w.y + w.height));
+      const dx = entity.x - closestX;
+      const dy = entity.y - closestY;
+      const distSq = dx * dx + dy * dy;
+      if (distSq < radius * radius) {
+        collided = true;
+        const dist = Math.sqrt(distSq);
+        if (dist > 0.001) {
+          const overlap = radius - dist;
+          entity.x += (dx / dist) * overlap;
+          entity.y += (dy / dist) * overlap;
+        } else {
+          const leftPen = entity.x - w.x;
+          const rightPen = w.x + w.width - entity.x;
+          const topPen = entity.y - w.y;
+          const botPen = w.y + w.height - entity.y;
+          const minPen = Math.min(leftPen, rightPen, topPen, botPen);
+          if (minPen === leftPen) entity.x = w.x - radius;
+          else if (minPen === rightPen) entity.x = w.x + w.width + radius;
+          else if (minPen === topPen) entity.y = w.y - radius;
+          else entity.y = w.y + w.height + radius;
+        }
+      }
+    }
+    return collided;
+  }
+
+  /**
+   * Damages a Cracked Secret Wall and unlocks the Secret Vault with Mythic Rewards when shattered!
+   */
+  private damageSecretWall(w: WallSegment, damage: number, now: number): void {
+    if (!w.isSecretWall || w.isOpen) return;
+    w.hp = Math.max(0, (w.hp ?? 65) - damage);
+    if (w.hp <= 0) {
+      w.isOpen = true;
+      this.secretFound = true;
+      const cx = w.x + w.width / 2;
+      const cy = w.y + w.height / 2;
+
+      this.emitFX({
+        type: 'SHOCKWAVE',
+        x: cx,
+        y: cy,
+        radius: 210,
+        color: '#facc15',
+        text: '🗝️ ¡SALA OCULTA DESCUBIERTA!',
+      });
+
+      this.directorDialogue = {
+        speaker: 'Director del Calabozo',
+        text: '¡¿QUÉ?! ¡Esa pared no estaba en el presupuesto! ¡Dejen de saquear mi bóveda privada!',
+        mood: 'SURPRISED',
+        timestamp: now,
+      };
+
+      // Spawn Mythic Treasure Cache inside the secret chamber
+      const vaultX = cx < this.roomWidth / 2 ? 180 : this.roomWidth - 180;
+      const vaultY = 185;
+
+      for (let i = 0; i < 5; i++) {
+        this.hearts.push({
+          id: `sec_gold_${this.nextHeartId++}`,
+          type: 'GOLD',
+          x: vaultX + (Math.random() * 110 - 55),
+          y: vaultY + (Math.random() * 90 - 45),
+          healAmount: 45 + this.roomIndex * 10,
+          createdAt: now,
+        });
+      }
+      this.hearts.push(
+        {
+          id: `sec_sh_${this.nextHeartId++}`,
+          type: 'SHIELD_ORB',
+          x: vaultX - 35,
+          y: vaultY,
+          healAmount: 50,
+          createdAt: now,
+        },
+        {
+          id: `sec_fr_${this.nextHeartId++}`,
+          type: 'FRENZY_ORB',
+          x: vaultX + 35,
+          y: vaultY,
+          healAmount: 1,
+          createdAt: now,
+        },
+        {
+          id: `sec_hp_${this.nextHeartId++}`,
+          type: 'HEART',
+          x: vaultX,
+          y: vaultY - 30,
+          healAmount: 50,
+          createdAt: now,
+        }
+      );
+
+      // Grant every player a Mythic Relic from the secret vault!
+      const mythicPool = MOCK_RELICS.filter(r => r.rarity === 'MYTHIC');
+      const chosenMythic =
+        mythicPool.length > 0
+          ? mythicPool[(this.roomIndex + Math.floor(Math.random() * mythicPool.length)) % mythicPool.length]
+          : MOCK_RELICS[0];
+
+      for (const p of Object.values(this.players)) {
+        if (!p.relics.some(r => r.id === chosenMythic.id)) {
+          p.relics.push(chosenMythic);
+          if (chosenMythic.modifiers.maxHpBonus) {
+            p.maxHp += chosenMythic.modifiers.maxHpBonus;
+            p.currentHp = Math.min(p.maxHp, p.currentHp + chosenMythic.modifiers.maxHpBonus);
+          }
+        }
+        p.shieldHp = Math.min(100, p.shieldHp + 40);
+      }
+
+      // Also spawn a surprise Mimic guardian inside the vault if combat is active!
+      if (!this.isRoomCleared()) {
+        const mimic = this.createEnemy('MIMICO', this.roomIndex, 1.1, true, vaultX, vaultY + 25);
+        mimic.aiState = 'ATTACKING';
+      }
+    }
+  }
+
+  /**
+   * Updates Co-op Runic Synchronization Seals connected to the Central Eye.
+   * Standing on seals charges them (2.4x faster when multiple teammates synchronize!).
+   * Completing all seals unleashes an Arcane Overload from the Central Eye!
+   */
+  private updateSyncSeals(dt: number, now: number): void {
+    if (this.seals.length === 0) return;
+
+    const alivePlayers = Object.values(this.players).filter(p => p.isAlive);
+    if (alivePlayers.length === 0) return;
+
+    const unactivated = this.seals.filter(s => !s.isActivated);
+    if (unactivated.length === 0) return;
+
+    // Count how many seals currently have at least one hero standing on them
+    let activeOccupiedSeals = 0;
+    for (const s of unactivated) {
+      const hasPlayer = alivePlayers.some(p => Math.hypot(p.x - s.x, p.y - s.y) <= s.radius + 24);
+      if (hasPlayer) activeOccupiedSeals++;
+    }
+
+    const isCoopSync = activeOccupiedSeals >= 2 || (alivePlayers.length === 1 && activeOccupiedSeals === 1);
+    const chargeRate = isCoopSync ? 0.58 : 0.32; // ~1.7s with sync, ~3.1s solo
+
+    for (const s of unactivated) {
+      const capturer = alivePlayers.find(p => Math.hypot(p.x - s.x, p.y - s.y) <= s.radius + 24);
+      if (capturer) {
+        s.progress = Math.min(1, s.progress + chargeRate * dt);
+        if (s.progress >= 1) {
+          s.isActivated = true;
+          s.progress = 1;
+          capturer.shieldHp = Math.min(100, capturer.shieldHp + 25);
+          this.emitFX({
+            type: 'SHOCKWAVE',
+            x: s.x,
+            y: s.y,
+            radius: 135,
+            color: '#38bdf8',
+            text: `👁️ ¡${s.label || 'SELLO'} SINCRONIZADO!`,
+          });
+        }
+      } else {
+        s.progress = Math.max(0, s.progress - 0.06 * dt);
+      }
+    }
+
+    // Check if ALL seals were just completed!
+    if (this.seals.every(s => s.isActivated)) {
+      const cx = this.roomWidth / 2;
+      const cy = this.roomHeight / 2;
+      this.emitFX({
+        type: 'DIRECTOR_INTERVENTION',
+        x: cx,
+        y: cy,
+        radius: 320,
+        color: '#22c55e',
+        text: '⚡ ¡OJO CENTRAL SINCRONIZADO: SOBRECARGA ARCANA!',
+      });
+
+      for (const p of alivePlayers) {
+        p.shieldHp = Math.min(100, p.shieldHp + 45);
+        p.currentHp = Math.min(p.maxHp, p.currentHp + 35);
+        p.combo += 10;
+        p.maxCombo = Math.max(p.maxCombo, p.combo);
+        p.comboExpiresAt = now + 7000;
+      }
+
+      // Blast all active enemies with the Central Eye's overload!
+      for (let i = this.enemies.length - 1; i >= 0; i--) {
+        const e = this.enemies[i];
+        e.stunUntil = now + 2600;
+        const eyeDmg = Math.max(45, Math.round(e.maxHp * 0.42));
+        this.applyDamageToEnemy(e, i, eyeDmg, alivePlayers[0], true, 'LIGHTNING', now);
+      }
+    }
+  }
+
+  /**
+   * Autonomous AI Companion Heroes (fight, dodge, revive fallen humans, synchronize seals, use skills, loot).
    */
   private updateAIHerbBots(dt: number, now: number): void {
     const bots = Object.values(this.players).filter(p => p.isBot && p.isAlive);
@@ -1100,10 +1591,11 @@ export class DungeonRoom {
 
     const fallenAllies = Object.values(this.players).filter(p => !p.isAlive);
     const aliveHumans = Object.values(this.players).filter(p => !p.isBot && p.isAlive);
+    const pendingSeals = this.seals.filter(s => !s.isActivated);
 
     for (const bot of bots) {
       // Bot auto-claims relic when room cleared
-      if (this.enemies.length === 0 && this.chestRelics.length > 0 && !this.chestClaimedBy.includes(bot.id)) {
+      if (this.isRoomCleared() && this.chestRelics.length > 0 && !this.chestClaimedBy.includes(bot.id)) {
         const randomRelic = this.chestRelics[Math.floor(Math.random() * this.chestRelics.length)];
         if (randomRelic) this.handleRelicChoice(bot.id, randomRelic.id);
       }
@@ -1123,6 +1615,35 @@ export class DungeonRoom {
           isDashing: dist > 180 && now >= bot.dashCooldownEndsAt,
         });
         continue;
+      }
+
+      // Priority 2: Synchronize Co-op Runic Seals if any are unactivated and no enemy is right on top of the bot!
+      if (pendingSeals.length > 0) {
+        const targetSeal = pendingSeals[0];
+        const distToSeal = Math.hypot(targetSeal.x - bot.x, targetSeal.y - bot.y);
+        const closestEnemy = this.enemies.reduce<{ e: EnemyEntity | null; d: number }>(
+          (acc, cur) => {
+            const d = Math.hypot(cur.x - bot.x, cur.y - bot.y);
+            return d < acc.d ? { e: cur, d } : acc;
+          },
+          { e: null, d: Infinity }
+        );
+
+        if (distToSeal > 24 || closestEnemy.d > 140) {
+          const moveAngle = Math.atan2(targetSeal.y - bot.y, targetSeal.x - bot.x);
+          const aimAngle = closestEnemy.e
+            ? Math.atan2(closestEnemy.e.y - bot.y, closestEnemy.e.x - bot.x)
+            : moveAngle;
+          this.handlePlayerInput(bot.id, {
+            moveX: distToSeal > 22 ? Math.cos(moveAngle) : 0,
+            moveY: distToSeal > 22 ? Math.sin(moveAngle) : 0,
+            angle: aimAngle,
+            isAttacking: this.enemies.length > 0,
+            isDashing: distToSeal > 240 && now >= bot.dashCooldownEndsAt,
+            isUsingSkill: closestEnemy.d < 250 && now >= bot.skillCooldownEndsAt,
+          });
+          continue;
+        }
       }
 
       // Priority 2: Combat against closest enemy
@@ -1192,8 +1713,8 @@ export class DungeonRoom {
 
     // Gravity well mutation gentle pull toward center
     if (this.currentMutation.hazardType === 'GRAVITY_WELL' && this.enemies.length > 0) {
-      const cx = config.game.roomWidth / 2;
-      const cy = config.game.roomHeight / 2;
+      const cx = this.roomWidth / 2;
+      const cy = this.roomHeight / 2;
       for (const p of Object.values(this.players)) {
         if (!p.isAlive || p.isDashing) continue;
         const a = Math.atan2(cy - p.y, cx - p.x);
@@ -1303,8 +1824,8 @@ export class DungeonRoom {
   }
 
   private updatePlayers(dt: number, now: number): void {
-    const W = config.game.roomWidth;
-    const H = config.game.roomHeight;
+    const W = this.roomWidth;
+    const H = this.roomHeight;
     const pad = 48;
 
     const allPlayers = Object.values(this.players);
@@ -1373,6 +1894,9 @@ export class DungeonRoom {
         }
       }
 
+      // Labyrinth interior wall collision
+      this.resolveWallCollisions(p, 18);
+
       // Magnetic Pickups (Hearts, Gold Coins, Shield Orbs, Frenzy Orbs)
       for (let i = this.hearts.length - 1; i >= 0; i--) {
         const h = this.hearts[i];
@@ -1411,14 +1935,14 @@ export class DungeonRoom {
       }
 
       // Branching Door transitions (North = Standard/Boss, East = Elite, West = Sanctuary)
-      const isCleared = this.enemies.length === 0;
+      const isCleared = this.isRoomCleared();
       const doors = this.computeDoors(isCleared);
 
+      if (p.y <= pad + 10 && isCleared && doors.NORTH.open && Math.abs(p.x - W / 2) < 82) {
+        this.advanceToNextRoom(doors.NORTH.encounterType || 'STANDARD');
+        return;
+      }
       if (p.y < pad) {
-        if (isCleared && doors.NORTH.open && Math.abs(p.x - W / 2) < 58) {
-          this.advanceToNextRoom(doors.NORTH.encounterType || 'STANDARD');
-          return;
-        }
         p.y = pad;
         p.vy = 0;
       }
@@ -1426,19 +1950,19 @@ export class DungeonRoom {
         p.y = H - pad;
         p.vy = 0;
       }
+      if (p.x <= pad + 10 && isCleared && doors.WEST.open && Math.abs(p.y - H / 2) < 82) {
+        this.advanceToNextRoom(doors.WEST.encounterType || 'SANCTUARY');
+        return;
+      }
       if (p.x < pad) {
-        if (isCleared && doors.WEST.open && Math.abs(p.y - H / 2) < 58) {
-          this.advanceToNextRoom(doors.WEST.encounterType || 'SANCTUARY');
-          return;
-        }
         p.x = pad;
         p.vx = 0;
       }
+      if (p.x >= W - pad - 10 && isCleared && doors.EAST.open && Math.abs(p.y - H / 2) < 82) {
+        this.advanceToNextRoom(doors.EAST.encounterType || 'ELITE');
+        return;
+      }
       if (p.x > W - pad) {
-        if (isCleared && doors.EAST.open && Math.abs(p.y - H / 2) < 58) {
-          this.advanceToNextRoom(doors.EAST.encounterType || 'ELITE');
-          return;
-        }
         p.x = W - pad;
         p.vx = 0;
       }
@@ -1694,6 +2218,212 @@ export class DungeonRoom {
             e.vy = Math.sin(orbit) * effSpeed * 0.7;
           }
         }
+      } else if (e.type === 'ESPIRITU') {
+        // ESPIRITU: Frost Wraith that phases through walls and fires twin freezing bolts!
+        e.stateTimer = (e.stateTimer || 0) + dt * 1000;
+        const cycle = e.stateTimer % e.attackCooldownMs;
+        if (cycle > e.attackCooldownMs - 550) {
+          e.aiState = 'CHARGING';
+          e.aimAngle = angleToTarget;
+          e.vx *= 0.4;
+          e.vy *= 0.4;
+          if (now - e.lastAttackAt >= e.attackCooldownMs) {
+            e.lastAttackAt = now;
+            for (let s = -1; s <= 1; s += 2) {
+              const a = angleToTarget + s * 0.14;
+              this.projectiles.push({
+                id: `proj_${this.nextProjectileId++}`,
+                ownerId: e.id,
+                fromPlayer: false,
+                x: e.x + Math.cos(a) * 20,
+                y: e.y + Math.sin(a) * 20,
+                vx: Math.cos(a) * 355,
+                vy: Math.sin(a) * 355,
+                radius: 7,
+                damage: e.damage,
+                color: '#38bdf8',
+                bouncesRemaining: 0,
+                createdAt: now,
+                lifetimeMs: 2400,
+                element: 'ICE',
+              });
+            }
+          }
+        } else {
+          e.aiState = 'IDLE';
+          const approach = minDist > 210 ? angleToTarget : angleToTarget + Math.PI / 3;
+          e.vx = Math.cos(approach) * effSpeed;
+          e.vy = Math.sin(approach) * effSpeed;
+        }
+      } else if (e.type === 'KAMIKAZE') {
+        // KAMIKAZE: Volatile Magma Imp that sprints at players and explodes!
+        e.stateTimer = (e.stateTimer || 0) + dt * 1000;
+        e.aiState = minDist < 180 ? 'CHARGING' : 'ATTACKING';
+        e.vx = Math.cos(angleToTarget) * effSpeed * (minDist < 160 ? 1.28 : 1.0);
+        e.vy = Math.sin(angleToTarget) * effSpeed * (minDist < 160 ? 1.28 : 1.0);
+
+        if (minDist < e.radius + 22) {
+          e.currentHp = 0;
+          this.emitFX({
+            type: 'EXPLOSION',
+            x: e.x,
+            y: e.y,
+            radius: 90,
+            color: '#f97316',
+            text: '💥 ¡KABOOM!',
+          });
+          for (const p of alivePlayers) {
+            if (Math.hypot(p.x - e.x, p.y - e.y) <= 92) {
+              this.damagePlayer(p, e.damage);
+            }
+          }
+        }
+      } else if (e.type === 'MIMICO') {
+        // MIMICO: Disguised as a chest until approached, damaged, or few enemies remain!
+        if (e.aiState === 'IDLE') {
+          e.vx = 0;
+          e.vy = 0;
+          if (minDist < 230 || e.currentHp < e.maxHp || this.enemies.length <= 2) {
+            e.aiState = 'ATTACKING';
+            this.emitFX({
+              type: 'CRIT',
+              x: e.x,
+              y: e.y - 22,
+              text: '🦷 ¡MÍMICO DESPIERTO!',
+              color: '#f59e0b',
+            });
+          }
+        } else {
+          e.stateTimer = (e.stateTimer || 0) + dt * 1000;
+          const cycle = e.stateTimer % 1200;
+          if (cycle < 750) {
+            e.aiState = 'ATTACKING';
+            e.vx = Math.cos(angleToTarget) * effSpeed * 1.35;
+            e.vy = Math.sin(angleToTarget) * effSpeed * 1.35;
+          } else {
+            e.aiState = 'CHARGING';
+            e.vx *= 0.3;
+            e.vy *= 0.3;
+            if (now - e.lastAttackAt >= e.attackCooldownMs) {
+              e.lastAttackAt = now;
+              for (let s = -1; s <= 1; s++) {
+                const a = angleToTarget + s * 0.25;
+                this.projectiles.push({
+                  id: `proj_${this.nextProjectileId++}`,
+                  ownerId: e.id,
+                  fromPlayer: false,
+                  x: e.x + Math.cos(a) * 22,
+                  y: e.y + Math.sin(a) * 22,
+                  vx: Math.cos(a) * 340,
+                  vy: Math.sin(a) * 340,
+                  radius: 7,
+                  damage: e.damage - 2,
+                  color: '#facc15',
+                  bouncesRemaining: 1,
+                  createdAt: now,
+                  lifetimeMs: 2000,
+                });
+              }
+            }
+          }
+          if (minDist < e.radius + 18) {
+            this.damagePlayer(closestPlayer, e.damage);
+          }
+        }
+      } else if (e.type === 'ARANA') {
+        // ARANA: Venomous Weaver that skitters rapidly and spits toxic webs!
+        e.stateTimer = (e.stateTimer || 0) + dt * 1000;
+        const cycle = e.stateTimer % e.attackCooldownMs;
+        if (cycle > e.attackCooldownMs - 500) {
+          e.aiState = 'CHARGING';
+          e.aimAngle = angleToTarget;
+          e.vx *= 0.25;
+          e.vy *= 0.25;
+          if (now - e.lastAttackAt >= e.attackCooldownMs) {
+            e.lastAttackAt = now;
+            for (let s = -1; s <= 1; s++) {
+              const a = angleToTarget + s * 0.24;
+              this.projectiles.push({
+                id: `proj_${this.nextProjectileId++}`,
+                ownerId: e.id,
+                fromPlayer: false,
+                x: e.x + Math.cos(a) * 20,
+                y: e.y + Math.sin(a) * 20,
+                vx: Math.cos(a) * 365,
+                vy: Math.sin(a) * 365,
+                radius: 7,
+                damage: e.damage,
+                color: '#84cc16',
+                bouncesRemaining: 0,
+                createdAt: now,
+                lifetimeMs: 2100,
+                element: 'POISON',
+              });
+            }
+            if (Math.random() < 0.35 && this.hazards.length < 10) {
+              this.hazards.push({
+                id: `web_${this.nextEventId++}`,
+                type: 'POISON_CLOUD',
+                x: e.x,
+                y: e.y,
+                radius: 44,
+                active: true,
+                createdAt: now,
+                durationMs: 4800,
+                damage: 8,
+              });
+            }
+          }
+        } else {
+          e.aiState = 'ATTACKING';
+          const weaveAngle = angleToTarget + Math.sin(e.stateTimer / 180) * 0.55;
+          e.vx = Math.cos(weaveAngle) * effSpeed;
+          e.vy = Math.sin(weaveAngle) * effSpeed;
+          if (minDist < e.radius + 17) {
+            this.damagePlayer(closestPlayer, e.damage);
+          }
+        }
+      } else if (e.type === 'CENTINELA') {
+        // CENTINELA: Arcane Sentinel Eye that fires high-speed laser beams!
+        e.stateTimer = (e.stateTimer || 0) + dt * 1000;
+        const cycle = e.stateTimer % e.attackCooldownMs;
+        if (cycle > e.attackCooldownMs - 650) {
+          e.aiState = 'CHARGING';
+          e.aimAngle = angleToTarget;
+          e.vx = 0;
+          e.vy = 0;
+          if (now - e.lastAttackAt >= e.attackCooldownMs) {
+            e.lastAttackAt = now;
+            this.projectiles.push({
+              id: `proj_${this.nextProjectileId++}`,
+              ownerId: e.id,
+              fromPlayer: false,
+              x: e.x + Math.cos(angleToTarget) * 24,
+              y: e.y + Math.sin(angleToTarget) * 24,
+              vx: Math.cos(angleToTarget) * 510,
+              vy: Math.sin(angleToTarget) * 510,
+              radius: 8,
+              damage: e.damage + 2,
+              color: '#e879f9',
+              bouncesRemaining: 1,
+              createdAt: now,
+              lifetimeMs: 2400,
+            });
+          }
+        } else {
+          e.aiState = 'IDLE';
+          if (minDist < 220) {
+            e.vx = -Math.cos(angleToTarget) * effSpeed;
+            e.vy = -Math.sin(angleToTarget) * effSpeed;
+          } else if (minDist > 380) {
+            e.vx = Math.cos(angleToTarget) * effSpeed;
+            e.vy = Math.sin(angleToTarget) * effSpeed;
+          } else {
+            const orbit = angleToTarget - Math.PI / 2;
+            e.vx = Math.cos(orbit) * effSpeed * 0.8;
+            e.vy = Math.sin(orbit) * effSpeed * 0.8;
+          }
+        }
       } else if (e.isBoss) {
         this.updateBossAI(e, closestPlayer, angleToTarget, dt, now);
       }
@@ -1701,10 +2431,20 @@ export class DungeonRoom {
       e.x += e.vx * dt;
       e.y += e.vy * dt;
 
-      // Keep enemies inside room bounds and sliding around pillars
+      // Keep enemies inside room bounds and sliding around pillars & labyrinth walls
       const pad = 52;
-      e.x = Math.max(pad, Math.min(config.game.roomWidth - pad, e.x));
-      e.y = Math.max(pad, Math.min(config.game.roomHeight - pad, e.y));
+      e.x = Math.max(pad, Math.min(this.roomWidth - pad, e.x));
+      e.y = Math.max(pad, Math.min(this.roomHeight - pad, e.y));
+
+      if (e.type !== 'ESPIRITU' && e.type !== 'MURCIELAGO' && !e.isBoss) {
+        const hitWall = this.resolveWallCollisions(e, e.radius);
+        if (hitWall) {
+          // Help ground enemies steer smoothly around labyrinth wall corners toward players
+          const tangentAngle = angleToTarget + (parseInt(e.id.slice(-1), 10) % 2 === 0 ? Math.PI / 2 : -Math.PI / 2);
+          e.x += Math.cos(tangentAngle) * effSpeed * 0.65 * dt;
+          e.y += Math.sin(tangentAngle) * effSpeed * 0.65 * dt;
+        }
+      }
 
       for (const pil of this.pillars) {
         const dx = e.x - pil.x;
@@ -1717,10 +2457,20 @@ export class DungeonRoom {
         }
       }
     });
+
+    // Clean up any Kamikaze imps that self-destructed on contact
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      if (this.enemies[i].currentHp <= 0) {
+        this.enemies.splice(i, 1);
+      }
+    }
   }
 
   /**
-   * Multi-Pattern Adaptive Boss AI (Spiral, Meteor Rain, Laser Sweep, Charge Slam).
+   * Multi-Pattern Adaptive Boss AI supporting 3 Distinct Boss Archetypes:
+   * - BOSS_TITAN (Room 3): Volcanic leaps, lava trails, 12-way magma rings, summons KAMIKAZE imps
+   * - BOSS_ARACHNID (Room 6): Venom spirals, toxic web fields, summons ARANA & ESPIRITU swarms
+   * - BOSS_DIRECTOR (Room 9+): Arcane lasers, meteor storms, spiral barrages, summons CENTINELA eyes
    */
   private updateBossAI(
     e: EnemyEntity,
@@ -1734,7 +2484,12 @@ export class DungeonRoom {
       e.bossPhase = 2;
       this.directorDialogue = {
         speaker: e.name,
-        text: '¡FASE 2 ACTIVADA! ¡EL TRIBUNAL DICTA SENTENCIA INMEDIATA!',
+        text:
+          e.type === 'BOSS_TITAN'
+            ? '¡FASE 2: NÚCLEO VOLCÁNICO SOBRECARGADO! ¡ARDAN EN CENIZAS!'
+            : e.type === 'BOSS_ARACHNID'
+            ? '¡FASE 2: ECLOSIÓN DEL NIDO ABISAL! ¡DEVÓRENLOS, MIS CRÍAS!'
+            : '¡FASE 2 ACTIVADA! ¡EL TRIBUNAL DICTA SENTENCIA INMEDIATA!',
         mood: 'ANGRY',
         timestamp: now,
       };
@@ -1742,14 +2497,28 @@ export class DungeonRoom {
         type: 'SHOCKWAVE',
         x: e.x,
         y: e.y,
-        radius: 260,
-        text: '🔥 ¡FASE 2: JUICIO FINAL!',
-        color: '#dc2626',
+        radius: 280,
+        text: '🔥 ¡FASE 2: FURIA DESATADA!',
+        color: e.color,
       });
+
+      // Phase 2 Boss Minion Summon!
+      if (this.enemies.length < 5) {
+        if (e.type === 'BOSS_TITAN') {
+          this.createEnemy('KAMIKAZE', this.roomIndex, 1.0, false, e.x - 90, e.y + 60);
+          this.createEnemy('KAMIKAZE', this.roomIndex, 1.0, false, e.x + 90, e.y + 60);
+        } else if (e.type === 'BOSS_ARACHNID') {
+          this.createEnemy('ARANA', this.roomIndex, 1.0, false, e.x - 100, e.y + 60);
+          this.createEnemy('ESPIRITU', this.roomIndex, 1.0, false, e.x + 100, e.y + 60);
+        } else {
+          this.createEnemy('CENTINELA', this.roomIndex, 1.0, false, e.x - 120, e.y + 70);
+          this.createEnemy('CENTINELA', this.roomIndex, 1.0, false, e.x + 120, e.y + 70);
+        }
+      }
     }
 
     e.stateTimer = (e.stateTimer || 0) + dt * 1000;
-    const patternIndex = Math.floor(e.stateTimer / 5200) % 4;
+    const patternIndex = Math.floor(e.stateTimer / 4800) % 4;
     const patterns: Array<EnemyEntity['bossPattern']> = [
       'SPIRAL',
       'METEOR_RAIN',
@@ -1761,64 +2530,95 @@ export class DungeonRoom {
     if (e.bossPattern === 'CHARGE_SLAM') {
       // Moves aggressively toward target player and slams
       e.aiState = 'ATTACKING';
-      e.vx = Math.cos(angleToTarget) * e.speed * (isPhase2 ? 1.65 : 1.3);
-      e.vy = Math.sin(angleToTarget) * e.speed * (isPhase2 ? 1.65 : 1.3);
+      const chargeMult = e.type === 'BOSS_TITAN' ? 1.75 : isPhase2 ? 1.65 : 1.35;
+      e.vx = Math.cos(angleToTarget) * e.speed * chargeMult;
+      e.vy = Math.sin(angleToTarget) * e.speed * chargeMult;
 
       if (Math.hypot(target.x - e.x, target.y - e.y) < e.radius + 22) {
         this.damagePlayer(target, e.damage);
       }
     } else {
-      // Hover near upper center
+      // Hover and weave across arena
       e.aiState = e.bossPattern === 'LASER_SWEEP' ? 'CHARGING' : 'IDLE';
       e.aimAngle = angleToTarget;
-      const centerX = config.game.roomWidth / 2 + Math.sin(now / 900) * 180;
-      const centerY = 230 + Math.cos(now / 700) * 60;
-      e.vx = (centerX - e.x) * 1.1;
-      e.vy = (centerY - e.y) * 1.1;
+      const centerX = this.roomWidth / 2 + Math.sin(now / 850) * 240;
+      const centerY = 260 + Math.cos(now / 650) * 85;
+      e.vx = (centerX - e.x) * 1.15;
+      e.vy = (centerY - e.y) * 1.15;
     }
 
-    const attackInterval = isPhase2 ? 950 : 1400;
+    const attackInterval = isPhase2 ? 920 : 1350;
     if (now - e.lastAttackAt >= attackInterval) {
       e.lastAttackAt = now;
 
       if (e.bossPattern === 'SPIRAL' || e.bossPattern === 'CHARGE_SLAM') {
-        const bulletCount = isPhase2 ? 11 : 8;
+        const bulletCount = isPhase2 ? 12 : 9;
+        const projElement = e.type === 'BOSS_TITAN' ? 'FIRE' : e.type === 'BOSS_ARACHNID' ? 'POISON' : 'NONE';
+        const projColor =
+          e.type === 'BOSS_TITAN'
+            ? '#f97316'
+            : e.type === 'BOSS_ARACHNID'
+            ? '#84cc16'
+            : isPhase2
+            ? '#dc2626'
+            : '#d97706';
+
         for (let i = 0; i < bulletCount; i++) {
-          const shotAngle = (i / bulletCount) * Math.PI * 2 + now / 320;
+          const shotAngle = (i / bulletCount) * Math.PI * 2 + now / 310;
           this.projectiles.push({
             id: `proj_${this.nextProjectileId++}`,
             ownerId: e.id,
             fromPlayer: false,
             x: e.x + Math.cos(shotAngle) * 44,
             y: e.y + Math.sin(shotAngle) * 44,
-            vx: Math.cos(shotAngle) * (isPhase2 ? 275 : 215),
-            vy: Math.sin(shotAngle) * (isPhase2 ? 275 : 215),
+            vx: Math.cos(shotAngle) * (isPhase2 ? 285 : 225),
+            vy: Math.sin(shotAngle) * (isPhase2 ? 285 : 225),
             radius: 10,
             damage: e.damage,
-            color: isPhase2 ? '#dc2626' : '#d97706',
+            color: projColor,
             bouncesRemaining: isPhase2 ? 1 : 0,
             createdAt: now,
             lifetimeMs: 3200,
+            element: projElement,
+          });
+        }
+
+        // Titan leaves lava pools during Charge Slam!
+        if (e.type === 'BOSS_TITAN' && e.bossPattern === 'CHARGE_SLAM' && this.hazards.length < 12) {
+          this.hazards.push({
+            id: `titan_lava_${this.nextEventId++}`,
+            type: 'LAVA',
+            x: e.x,
+            y: e.y,
+            radius: 54,
+            active: true,
+            createdAt: now,
+            durationMs: 6000,
+            damage: 14,
           });
         }
       } else if (e.bossPattern === 'METEOR_RAIN') {
-        // Call down meteors on all living players + aimed fan
         for (const p of Object.values(this.players)) {
           if (!p.isAlive) continue;
           this.hazards.push({
             id: `meteor_${this.nextEventId++}`,
-            type: 'METEOR_STRIKE',
+            type: e.type === 'BOSS_ARACHNID' ? 'POISON_CLOUD' : 'METEOR_STRIKE',
             x: p.x + (Math.random() * 60 - 30),
             y: p.y + (Math.random() * 60 - 30),
             radius: 68,
             active: true,
             createdAt: now,
-            durationMs: 1300,
-            damage: e.damage + 4,
+            durationMs: e.type === 'BOSS_ARACHNID' ? 4500 : 1300,
+            damage: e.type === 'BOSS_ARACHNID' ? 11 : e.damage + 4,
           });
         }
+        // Periodically summon 1 helper minion if below cap
+        if (this.enemies.length < 4 && Math.random() < 0.45) {
+          const minionType: EnemyType =
+            e.type === 'BOSS_TITAN' ? 'KAMIKAZE' : e.type === 'BOSS_ARACHNID' ? 'ARANA' : 'ESPIRITU';
+          this.createEnemy(minionType, this.roomIndex, 0.9, false, e.x + (Math.random() * 160 - 80), e.y + 60);
+        }
       } else if (e.bossPattern === 'LASER_SWEEP') {
-        // High-velocity targeted barrage
         for (let s = -2; s <= 2; s++) {
           const a = angleToTarget + s * 0.14;
           this.projectiles.push({
@@ -1827,11 +2627,11 @@ export class DungeonRoom {
             fromPlayer: false,
             x: e.x + Math.cos(a) * 44,
             y: e.y + Math.sin(a) * 44,
-            vx: Math.cos(a) * 420,
-            vy: Math.sin(a) * 420,
+            vx: Math.cos(a) * 430,
+            vy: Math.sin(a) * 430,
             radius: 9,
             damage: e.damage,
-            color: '#ef4444',
+            color: e.type === 'BOSS_ARACHNID' ? '#a3e635' : '#ef4444',
             bouncesRemaining: 1,
             createdAt: now,
             lifetimeMs: 2600,
@@ -1842,8 +2642,8 @@ export class DungeonRoom {
   }
 
   private updateProjectiles(dt: number, now: number): void {
-    const W = config.game.roomWidth;
-    const H = config.game.roomHeight;
+    const W = this.roomWidth;
+    const H = this.roomHeight;
     const pad = 42;
 
     const remaining: ProjectileEntity[] = [];
@@ -1851,10 +2651,12 @@ export class DungeonRoom {
     for (const p of this.projectiles) {
       if (now - p.createdAt > p.lifetimeMs) continue;
 
+      const prevX = p.x;
+      const prevY = p.y;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
 
-      // 1. Wall bounce or explode/destroy
+      // 1. Outer Wall bounce or explode/destroy
       let hitWall = false;
       if (p.x <= pad || p.x >= W - pad) {
         if (p.bouncesRemaining > 0) {
@@ -1872,6 +2674,36 @@ export class DungeonRoom {
           p.y = Math.max(pad + 1, Math.min(H - pad - 1, p.y));
         } else {
           hitWall = true;
+        }
+      }
+
+      // 1b. Interior Labyrinth Walls & Destructible Secret Walls!
+      if (!hitWall) {
+        for (const w of this.walls) {
+          if (w.isOpen) continue;
+          if (
+            p.x + p.radius > w.x &&
+            p.x - p.radius < w.x + w.width &&
+            p.y + p.radius > w.y &&
+            p.y - p.radius < w.y + w.height
+          ) {
+            if (p.fromPlayer && w.isSecretWall) {
+              this.damageSecretWall(w, p.damage, now);
+              hitWall = true;
+              break;
+            }
+            if (p.bouncesRemaining > 0) {
+              const wasOutsideX = prevX + p.radius <= w.x || prevX - p.radius >= w.x + w.width;
+              if (wasOutsideX) p.vx = -p.vx;
+              else p.vy = -p.vy;
+              p.bouncesRemaining--;
+              p.x = prevX;
+              p.y = prevY;
+            } else {
+              hitWall = true;
+            }
+            break;
+          }
         }
       }
 
@@ -2035,6 +2867,17 @@ export class DungeonRoom {
       color: element === 'ICE' ? '#38bdf8' : element === 'POISON' ? '#22c55e' : '#f97316',
     });
 
+    // Explosions also shatter nearby Cracked Secret Walls!
+    for (const w of this.walls) {
+      if (w.isSecretWall && !w.isOpen) {
+        const cx = w.x + w.width / 2;
+        const cy = w.y + w.height / 2;
+        if (Math.hypot(cx - x, cy - y) <= radius + 65) {
+          this.damageSecretWall(w, damage * 1.5, now);
+        }
+      }
+    }
+
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const e = this.enemies[i];
       const dist = Math.hypot(e.x - x, e.y - y);
@@ -2110,6 +2953,9 @@ export class DungeonRoom {
 
     e.currentHp -= finalDamage;
     e.flashUntil = now + 95;
+    if (e.type === 'MIMICO' && e.aiState === 'IDLE') {
+      e.aiState = 'ATTACKING';
+    }
     this.telemetry.totalDamageDealt += finalDamage;
     this.directorAnger = Math.min(100, this.directorAnger + finalDamage * 0.08);
 
@@ -2152,8 +2998,8 @@ export class DungeonRoom {
         }
       }
 
-      // Elite Explosivo detonates on death
-      if (e.eliteModifier === 'EXPLOSIVO') {
+      // Elite Explosivo or Kamikaze detonates on death
+      if (e.eliteModifier === 'EXPLOSIVO' || e.type === 'KAMIKAZE') {
         this.emitFX({
           type: 'EXPLOSION',
           x: e.x,
@@ -2161,6 +3007,11 @@ export class DungeonRoom {
           radius: 85,
           color: '#ef4444',
         });
+        for (const p of Object.values(this.players)) {
+          if (p.isAlive && Math.hypot(p.x - e.x, p.y - e.y) <= 85) {
+            this.damagePlayer(p, Math.round(e.damage * 0.75));
+          }
+        }
       }
 
       // Large Slime splits into 2 Mini-Slimes!
@@ -2172,7 +3023,8 @@ export class DungeonRoom {
       // Drop Gold Coins, Hearts, Shield Orbs, or Frenzy Orbs!
       const goldMult = owner ? this.getPlayerEffectiveStats(owner).goldMultiplier : 1;
       const comboBonus = owner && owner.combo >= 10 ? 1.4 : 1.0;
-      const goldValue = Math.round((e.isElite ? 35 : 10 + this.roomIndex * 2) * goldMult * comboBonus);
+      const mimicMult = e.type === 'MIMICO' ? 3.0 : 1.0;
+      const goldValue = Math.round((e.isElite ? 35 : 10 + this.roomIndex * 2) * goldMult * comboBonus * mimicMult);
 
       this.hearts.push({
         id: `gold_${this.nextHeartId++}`,
@@ -2182,6 +3034,27 @@ export class DungeonRoom {
         healAmount: goldValue,
         createdAt: now,
       });
+
+      if (e.type === 'MIMICO') {
+        this.hearts.push(
+          {
+            id: `mimic_sh_${this.nextHeartId++}`,
+            type: 'SHIELD_ORB',
+            x: e.x - 22,
+            y: e.y,
+            healAmount: 35,
+            createdAt: now,
+          },
+          {
+            id: `mimic_fr_${this.nextHeartId++}`,
+            type: 'FRENZY_ORB',
+            x: e.x + 22,
+            y: e.y,
+            healAmount: 1,
+            createdAt: now,
+          }
+        );
+      }
 
       if (e.isElite || Math.random() < 0.35) {
         const dropRoll = Math.random();
@@ -2289,26 +3162,85 @@ export class DungeonRoom {
   }
 
   private checkRoomClearance(): void {
-    if (this.enemies.length === 0 && this.phase === 'PLAYING' && !this.roomClearAnnounced) {
-      this.roomClearAnnounced = true;
-      const isBoss = this.roomIndex === this.totalRooms || (this.roomIndex > this.totalRooms && this.roomIndex % 3 === 0);
-      if (isBoss) {
-        this.phase = 'VICTORY';
-        this.director.assignPlayerTitles(this.players);
-        this.directorDialogue = {
-          speaker: 'Director del Calabozo',
-          text: '¡INCREÍBLE! Han derrotado al guardián del piso. ¿Cobran su victoria o descienden al Abismo Infinito?',
-          mood: 'SURPRISED',
-          timestamp: Date.now(),
-        };
-      } else {
-        this.directorDialogue = this.director.getDirectorQuote('roomClear');
+    if (this.enemies.length === 0 && this.phase === 'PLAYING') {
+      // Multi-Wave Progression: if more waves remain in this labyrinth level, spawn the next wave!
+      if (this.currentWave < this.totalWaves) {
+        this.currentWave++;
+        this.spawnEnemiesForRoom(this.roomIndex, this.encounterType, this.currentWave);
+        for (const p of Object.values(this.players)) {
+          if (p.isAlive) {
+            p.currentHp = Math.min(p.maxHp, p.currentHp + 18);
+          }
+        }
+        this.emitFX({
+          type: 'DIRECTOR_INTERVENTION',
+          x: this.roomWidth / 2,
+          y: this.roomHeight / 2,
+          radius: 220,
+          color: '#f59e0b',
+          text: `⚔️ ¡OLEADA ${this.currentWave} / ${this.totalWaves} EN CAMINO!`,
+        });
+        return;
+      }
+
+      if (!this.roomClearAnnounced) {
+        this.roomClearAnnounced = true;
+        // Guarantee all Synchronization Seals lock to 100% activated when the room is cleared!
+        for (const s of this.seals) {
+          s.isActivated = true;
+          s.progress = 1;
+        }
+
+        const isFinalBoss =
+          this.roomIndex >= this.totalRooms && this.roomIndex % 3 === 0;
+        const isMidBoss =
+          this.roomIndex < this.totalRooms && this.roomIndex % 3 === 0;
+
+        if (isFinalBoss) {
+          this.phase = 'VICTORY';
+          this.director.assignPlayerTitles(this.players);
+          this.directorDialogue = {
+            speaker: 'Director del Calabozo',
+            text: '¡INCREÍBLE! Han derrotado al guardián del piso. ¿Cobran su victoria o descienden al Abismo Infinito?',
+            mood: 'SURPRISED',
+            timestamp: Date.now(),
+          };
+        } else if (isMidBoss) {
+          for (const p of Object.values(this.players)) {
+            p.gold += 85;
+            p.shieldHp = Math.min(100, p.shieldHp + 45);
+          }
+          this.directorDialogue = {
+            speaker: 'Director del Calabozo',
+            text: '¡Imposible! Derribaron a mi Coloso Guardián... ¡Tomen su Reliquia del Cofre y crucen el Portal Norte!',
+            mood: 'SURPRISED',
+            timestamp: Date.now(),
+          };
+          this.emitFX({
+            type: 'SHOCKWAVE',
+            x: this.roomWidth / 2,
+            y: this.roomHeight / 2,
+            radius: 280,
+            color: '#22c55e',
+            text: '🏆 ¡JEFE DERROTADO: PORTALES ABIERTOS!',
+          });
+        } else {
+          this.directorDialogue = this.director.getDirectorQuote('roomClear');
+          this.emitFX({
+            type: 'SHOCKWAVE',
+            x: this.roomWidth / 2,
+            y: this.roomHeight / 2,
+            radius: 220,
+            color: '#22c55e',
+            text: '🚪 ¡SALA DESPEJADA: PORTALES ABIERTOS!',
+          });
+        }
       }
     }
   }
 
   public advanceToNextRoom(nextEncounterType: RoomEncounterType = 'STANDARD'): void {
-    if (this.enemies.length > 0 || this.isTransitioningRoom) return;
+    if (!this.isRoomCleared() || this.isTransitioningRoom) return;
     const nextIdx = this.roomIndex + 1;
     void this.setupRoom(nextIdx, nextEncounterType);
   }
@@ -2367,11 +3299,9 @@ export class DungeonRoom {
   }
 
   private computeDoors(isCleared: boolean): Record<DoorDirection, DoorState> {
-    const W = config.game.roomWidth;
-    const H = config.game.roomHeight;
-    const nextIsBoss =
-      this.roomIndex + 1 === this.totalRooms ||
-      (this.roomIndex + 1 > this.totalRooms && (this.roomIndex + 1) % 3 === 0);
+    const W = this.roomWidth;
+    const H = this.roomHeight;
+    const nextIsBoss = (this.roomIndex + 1) % 3 === 0;
 
     return {
       NORTH: {
@@ -2379,7 +3309,7 @@ export class DungeonRoom {
         open: isCleared,
         targetRoomIndex: this.roomIndex + 1,
         encounterType: nextIsBoss ? 'BOSS' : 'STANDARD',
-        label: nextIsBoss ? '⚔️ JEFE FINAL' : '⚔️ CÁMARA CENTRAL',
+        label: nextIsBoss ? '⚔️ BATALLA DE JEFE' : '⚔️ CÁMARA CENTRAL',
         x: W / 2 - 55,
         y: 10,
         width: 110,
@@ -2420,9 +3350,9 @@ export class DungeonRoom {
   }
 
   public getState(): GameWorldState {
-    const isCleared = this.enemies.length === 0;
-    const W = config.game.roomWidth;
-    const H = config.game.roomHeight;
+    const isCleared = this.isRoomCleared();
+    const W = this.roomWidth;
+    const H = this.roomHeight;
     const doors = this.computeDoors(isCleared);
 
     const humanIds = Object.values(this.players)
@@ -2454,6 +3384,11 @@ export class DungeonRoom {
       pillars: this.pillars,
       barrels: this.barrels,
       hazards: this.hazards,
+      walls: this.walls,
+      seals: this.seals,
+      currentWave: this.currentWave,
+      totalWaves: this.totalWaves,
+      secretFound: this.secretFound,
       width: W,
       height: H,
     };
@@ -2574,7 +3509,26 @@ export class DungeonRoom {
 
     return {
       r: this.roomIndex,
-      c: this.enemies.length === 0,
+      c: this.isRoomCleared(),
+      wv: this.currentWave,
+      tw: this.totalWaves,
+      sf: this.secretFound,
+      ...(this.seals.length > 0
+        ? {
+            s: this.seals.map(s => ({
+              id: s.id,
+              progress: Math.round(s.progress * 100) / 100,
+              isActivated: s.isActivated,
+            })),
+          }
+        : {}),
+      ...(this.walls.some(w => w.isSecretWall)
+        ? {
+            sw: this.walls
+              .filter(w => w.isSecretWall)
+              .map(w => ({ id: w.id, hp: w.hp, isOpen: w.isOpen })),
+          }
+        : {}),
       p: playersTick,
       e: enemiesTick,
       pr: projectilesTick,
