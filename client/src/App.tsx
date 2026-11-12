@@ -131,25 +131,20 @@ export const App: React.FC = () => {
       if (player) {
         if (prevHpRef.current !== null) {
           if (player.currentHp < prevHpRef.current) {
-            const diff = prevHpRef.current - player.currentHp;
             sfx.playHit();
             renderer.addScreenShake(7, 0.25);
-            renderer.textManager.spawn(`-${diff}`, player.x, player.y - 20, '#ef4444');
             renderer.particleSystem.emitBlood(player.x, player.y, '#dc2626', 10);
             renderer.addBloodDecal(player.x, player.y, '#7f1d1d');
           } else if (player.currentHp > prevHpRef.current) {
-            const diff = player.currentHp - prevHpRef.current;
             sfx.playHeal();
-            renderer.textManager.spawn(`+${diff} HP`, player.x, player.y - 25, '#22c55e');
             renderer.particleSystem.emitSparks(player.x, player.y, '#4ade80', 8);
           }
         }
         prevHpRef.current = player.currentHp;
 
         if (prevGoldRef.current !== null && player.gold > prevGoldRef.current) {
-          const goldDiff = player.gold - prevGoldRef.current;
           sfx.playCoin();
-          renderer.textManager.spawn(`+${goldDiff} 🪙`, player.x, player.y - 30, '#facc15');
+          renderer.particleSystem.emitSparks(player.x, player.y, '#facc15', 6);
         }
         prevGoldRef.current = player.gold;
       }
@@ -171,39 +166,32 @@ export const App: React.FC = () => {
           } else if (ev.type === 'FROST_NOVA') {
             sfx.playSkill();
             renderer.particleSystem.emitExplosion(ev.x, ev.y, ev.radius || 110, '#38bdf8');
-            if (ev.text) renderer.textManager.spawn(ev.text, ev.x, ev.y - 20, '#38bdf8');
           } else if (ev.type === 'TOXIC_BLAST') {
             sfx.playExplosion();
             renderer.particleSystem.emitExplosion(ev.x, ev.y, ev.radius || 95, '#10b981');
-            if (ev.text) renderer.textManager.spawn(ev.text, ev.x, ev.y - 20, '#10b981');
           } else if (ev.type === 'SHOCKWAVE') {
             sfx.playSkill();
             renderer.addScreenShake(6, 0.2);
             renderer.particleSystem.addShockwave(ev.x, ev.y, ev.radius || 140, ev.color || '#f59e0b', 4);
-            if (ev.text) renderer.textManager.spawn(ev.text, ev.x, ev.y - 24, ev.color || '#facc15');
           } else if (ev.type === 'SYNERGY') {
             sfx.playSynergy();
             renderer.addScreenShake(5, 0.18);
             renderer.particleSystem.addShockwave(ev.x, ev.y, ev.radius || 95, '#c084fc', 3.5);
             renderer.particleSystem.emitSparks(ev.x, ev.y, '#e879f9', 14);
-            if (ev.text) renderer.textManager.spawn(ev.text, ev.x, ev.y - 18, '#e879f9');
           } else if (ev.type === 'LIGHTNING_ARC' && ev.targetX !== undefined && ev.targetY !== undefined) {
             renderer.particleSystem.addLightningArc(ev.x, ev.y, ev.targetX, ev.targetY, ev.color || '#38bdf8');
           } else if (ev.type === 'REVIVE') {
             sfx.playHeal();
             renderer.particleSystem.addShockwave(ev.x, ev.y, 90, '#22c55e', 4);
-            if (ev.text) renderer.textManager.spawn(ev.text, ev.x, ev.y - 24, '#4ade80');
           } else if (ev.type === 'PING') {
             sfx.playPing();
             renderer.particleSystem.addShockwave(ev.x, ev.y, 65, '#f59e0b', 3);
-            if (ev.text) renderer.textManager.spawn(ev.text, ev.x, ev.y - 16, '#fbbf24');
           } else if (ev.type === 'DIRECTOR_INTERVENTION') {
             sfx.playExplosion();
             renderer.addScreenShake(10, 0.35);
             renderer.particleSystem.addShockwave(ev.x, ev.y, ev.radius || 130, ev.color || '#ef4444', 5);
-            if (ev.text) renderer.textManager.spawn(ev.text, ev.x, ev.y - 28, '#f87171');
-          } else if (ev.type === 'CRIT' && ev.text) {
-            renderer.textManager.spawn(ev.text, ev.x, ev.y, ev.color || '#facc15');
+          } else if (ev.type === 'CRIT') {
+            renderer.particleSystem.emitSparks(ev.x, ev.y, ev.color || '#facc15', 10);
           }
         }
       }
@@ -222,8 +210,6 @@ export const App: React.FC = () => {
               renderer.particleSystem.emitBlood(prevE.x, prevE.y, '#991b1b', 12);
             }
           } else if (currentE.currentHp < prevE.currentHp) {
-            const diff = prevE.currentHp - currentE.currentHp;
-            renderer.textManager.spawn(`${diff}`, currentE.x, currentE.y - 14, '#facc15');
             const sparkColor = currentE.type === 'SLIME' ? '#22c55e' : '#dc2626';
             renderer.particleSystem.emitBlood(currentE.x, currentE.y, sparkColor, 6);
           }

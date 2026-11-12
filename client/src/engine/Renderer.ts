@@ -237,22 +237,24 @@ export class GameRenderer {
         SpriteModels.drawSyncSeal(ctx, seal, this.totalTime);
       }
 
-      // Central Eye Status Callout
-      const activeCount = world.room.seals.filter(s => s.isActivated).length;
+      // Central Eye Visual Seal Synchronization Nodes (Zero text clutter)
       const totalCount = world.room.seals.length;
       ctx.save();
-      ctx.font = 'bold 12px "Cinzel", serif';
-      ctx.textAlign = 'center';
-      if (world.room.isCleared) {
-        ctx.fillStyle = '#4ade80';
-        ctx.fillText('✓ OJO ARCANO DESBLOQUEADO — ¡PORTALES ABIERTOS!', cx, cy - 66);
-      } else {
-        ctx.fillStyle = activeCount === totalCount ? '#4ade80' : '#c084fc';
-        ctx.fillText(
-          `👁️ OJO RÚNICO CENTRAL: ${activeCount}/${totalCount} SELLOS SINCRONIZADOS`,
-          cx,
-          cy - 66
-        );
+      for (let i = 0; i < totalCount; i++) {
+        const seal = world.room.seals[i];
+        const nodeX = cx + (i - (totalCount - 1) / 2) * 26;
+        const nodeY = cy - 66;
+        ctx.fillStyle = seal.isActivated || world.room.isCleared ? '#22c55e' : seal.progress > 0 ? '#38bdf8' : '#7e22ce';
+        ctx.strokeStyle = '#fef08a';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(nodeX, nodeY - 7);
+        ctx.lineTo(nodeX + 7, nodeY);
+        ctx.lineTo(nodeX, nodeY + 7);
+        ctx.lineTo(nodeX - 7, nodeY);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
       }
       ctx.restore();
     }
@@ -298,6 +300,46 @@ export class GameRenderer {
     // 5.6. Draw Enemy Aim Telegraph Warning Lines
     for (const enemy of world.enemies) {
       SpriteModels.drawEnemyTelegraph(ctx, enemy);
+    }
+
+    // 5.9. Draw Boss Immunity Shield Tethers to Ritual Guardians
+    for (const enemy of world.enemies) {
+      if (enemy.isBoss && enemy.bossShieldActive) {
+        const bossPos = this.getSmoothPos(enemy.id, enemy.x, enemy.y, dt, false);
+        for (const minion of world.enemies) {
+          if (minion.isBoss) continue;
+          const mPos = this.getSmoothPos(minion.id, minion.x, minion.y, dt, false);
+          ctx.save();
+          // Outer pulsing arcane tether
+          ctx.strokeStyle = 'rgba(244, 63, 94, 0.55)';
+          ctx.lineWidth = 5 + Math.sin(this.totalTime * 12) * 1.5;
+          ctx.beginPath();
+          ctx.moveTo(bossPos.x, bossPos.y);
+          const midX = (bossPos.x + mPos.x) / 2 + Math.sin(this.totalTime * 8 + minion.x) * 14;
+          const midY = (bossPos.y + mPos.y) / 2 + Math.cos(this.totalTime * 8 + minion.y) * 14;
+          ctx.quadraticCurveTo(midX, midY, mPos.x, mPos.y);
+          ctx.stroke();
+
+          // Inner white-gold core beam
+          ctx.strokeStyle = '#fde047';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([8, 6]);
+          ctx.lineDashOffset = -this.totalTime * 60;
+          ctx.beginPath();
+          ctx.moveTo(bossPos.x, bossPos.y);
+          ctx.quadraticCurveTo(midX, midY, mPos.x, mPos.y);
+          ctx.stroke();
+
+          // Pylon Anchor Ring under Ritual Guardian
+          ctx.setLineDash([]);
+          ctx.strokeStyle = '#f43f5e';
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.arc(mPos.x, mPos.y, minion.radius + 9, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
     }
 
     // 6. Draw Enemies with Smooth 60 FPS Interpolation
@@ -713,19 +755,24 @@ export class GameRenderer {
         ctx.strokeStyle = '#052e16';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(12, 0);
-        ctx.lineTo(-8, -8);
-        ctx.lineTo(-4, 0);
-        ctx.lineTo(-8, 8);
+        ctx.moveTo(14, 0);
+        ctx.lineTo(-8, -9);
+        ctx.lineTo(-3, 0);
+        ctx.lineTo(-8, 9);
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
-        ctx.restore();
 
-        ctx.fillStyle = '#4ade80';
-        ctx.font = 'bold 10px "Cinzel", serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('🚪 SALIDA', ax, ay - 12);
+        // Trailing second chevron (purely visual exit indicator, zero text)
+        ctx.fillStyle = '#86efac';
+        ctx.beginPath();
+        ctx.moveTo(4, 0);
+        ctx.lineTo(-14, -6);
+        ctx.lineTo(-10, 0);
+        ctx.lineTo(-14, 6);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
       }
     } else {
       // 1. Arrows to distant enemies (> 290px away)
@@ -808,21 +855,25 @@ export class GameRenderer {
     ctx.fillRect(mapX, mapY, mapW, mapH);
     ctx.strokeRect(mapX, mapY, mapW, mapH);
 
-    // Header Label (Wave & Enemies / Portal Status)
+    // Visual Wave Crystal Pips Header (Zero canvas text)
     ctx.fillStyle = 'rgba(12, 10, 9, 0.9)';
     ctx.fillRect(mapX, mapY - 20, mapW, 18);
-    ctx.font = 'bold 10px "Cinzel", serif';
-    ctx.textAlign = 'center';
     const curWave = world.room.currentWave || 1;
     const totWaves = world.room.totalWaves || 1;
-    ctx.fillStyle = world.room.isCleared ? '#4ade80' : '#fbbf24';
-    ctx.fillText(
-      world.room.isCleared
-        ? '✓ PORTALES ABIERTOS'
-        : `OLEADA ${curWave}/${totWaves} • ${world.enemies.length} ENEMIGOS`,
-      mapX + mapW / 2,
-      mapY - 7
-    );
+    for (let wIdx = 1; wIdx <= totWaves; wIdx++) {
+      const pipX = mapX + 18 + (wIdx - 1) * 18;
+      const pipY = mapY - 11;
+      const isDone = world.room.isCleared || wIdx < curWave;
+      const isCurrent = !world.room.isCleared && wIdx === curWave;
+      ctx.fillStyle = isDone ? '#22c55e' : isCurrent ? '#facc15' : '#44403c';
+      ctx.beginPath();
+      ctx.moveTo(pipX, pipY - 5);
+      ctx.lineTo(pipX + 5, pipY);
+      ctx.lineTo(pipX, pipY + 5);
+      ctx.lineTo(pipX - 5, pipY);
+      ctx.closePath();
+      ctx.fill();
+    }
 
     // Interior Labyrinth Walls & Secret Wall
     if (world.room.walls) {

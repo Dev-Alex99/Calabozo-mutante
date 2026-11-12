@@ -231,7 +231,6 @@ export class DungeonRoom {
       type: 'PING',
       x: Math.max(60, Math.min(this.roomWidth - 60, x)),
       y: Math.max(60, Math.min(this.roomHeight - 60, y)),
-      text: kind || `📍 ${p.name}`,
       color: '#f59e0b',
     });
   }
@@ -806,27 +805,27 @@ export class DungeonRoom {
     this.enemies = [];
     const playerCount = Math.max(1, Object.keys(this.players).length);
     const tier = Math.floor((this.roomIndex - 1) / 3); // 0 at Room 3, 1 at Room 6, 2 at Room 9...
-    const scale = (1 + (playerCount - 1) * 0.3) * (1 + tier * 0.38);
+    const scale = (1 + (playerCount - 1) * 0.32) * (1 + tier * 0.35);
 
     const bossCycle = this.roomIndex % 9;
     let bossType: EnemyType = 'BOSS_DIRECTOR';
     let bossName = 'El Gran Arquitecto del Abismo';
     let introQuote = '¡Llegaron al final del contrato! ¡Contemplen la furia del Algoritmo Central!';
     let bossColor = '#b91c1c';
-    let baseBossHp = 1250;
+    let baseBossHp = 22000;
 
     if (bossCycle === 3) {
       bossType = 'BOSS_TITAN';
       bossName = 'Ignis-Vulcan, Coloso de Magma y Cadenas';
       introQuote = '¡MIS CADENAS FUNDIRÁN SUS ARMADURAS! ¡EL PISO ES MI FRAGUA!';
       bossColor = '#ea580c';
-      baseBossHp = 920;
+      baseBossHp = 13500;
     } else if (bossCycle === 6) {
       bossType = 'BOSS_ARACHNID';
       bossName = 'Aracne-Nyx, Reina Tejedora del Vórtice';
       introQuote = '¡Bienvenidos a mi nido de seda y veneno! ¡Mis crías devorarán sus huesos!';
       bossColor = '#65a30d';
-      baseBossHp = 1080;
+      baseBossHp = 17500;
     } else {
       const bossData = await this.director.getBossAdaptation(this.telemetry);
       bossName = bossData.bossName;
@@ -840,26 +839,49 @@ export class DungeonRoom {
       timestamp: Date.now(),
     };
 
+    // Place 2 Runic Disruption Seals in the Boss Arena (initially dormant; they unlock during Boss Shield Phases!)
+    const W = this.roomWidth;
+    const H = this.roomHeight;
+    this.seals = [
+      {
+        id: `boss_seal_${this.roomIndex}_L`,
+        x: Math.round(W * 0.18),
+        y: Math.round(H * 0.54),
+        radius: 54,
+        progress: 1,
+        isActivated: true,
+      },
+      {
+        id: `boss_seal_${this.roomIndex}_R`,
+        x: Math.round(W * 0.82),
+        y: Math.round(H * 0.54),
+        radius: 54,
+        progress: 1,
+        isActivated: true,
+      },
+    ];
+
     const bossHp = Math.round(baseBossHp * scale);
     this.enemies.push({
       id: `boss_${bossType}_${this.roomIndex}`,
       type: bossType,
       name: bossName,
       x: this.roomWidth / 2,
-      y: 240,
+      y: 250,
       vx: 0,
       vy: 0,
-      radius: 52,
+      radius: 58,
       currentHp: bossHp,
       maxHp: bossHp,
-      speed: 96 * this.currentMutation.enemySpeedMultiplier,
-      damage: 22 + tier * 3,
+      speed: 102 * this.currentMutation.enemySpeedMultiplier,
+      damage: 24 + tier * 4,
       color: bossColor,
       lastAttackAt: Date.now(),
-      attackCooldownMs: 1450,
+      attackCooldownMs: 1200,
       stateTimer: 0,
       isBoss: true,
       bossPhase: 1,
+      bossShieldActive: false,
       bossPattern: 'SPIRAL',
     });
   }
@@ -977,7 +999,6 @@ export class DungeonRoom {
         y: player.y,
         radius: 170,
         color: '#f59e0b',
-        text: '🛡️ ¡BALUARTE SÍSMICO!',
       });
 
       const shockDamage = Math.round(stats.attackDamage * 1.45);
@@ -1041,10 +1062,10 @@ export class DungeonRoom {
       });
 
       this.emitFX({
-        type: 'CRIT',
+        type: 'SHOCKWAVE',
         x: player.x,
-        y: player.y - 24,
-        text: '🏹 ¡SALVA + TRAMPA!',
+        y: player.y,
+        radius: 90,
         color: '#38bdf8',
       });
     } else if (player.classType === 'MAGO') {
@@ -1070,7 +1091,6 @@ export class DungeonRoom {
         x: targetX,
         y: targetY,
         radius: 145,
-        text: '🌀 ¡SINGULARIDAD ARCANA!',
         color: '#a855f7',
       });
     } else if (player.classType === 'PICARO') {
@@ -1099,7 +1119,6 @@ export class DungeonRoom {
         x: player.x,
         y: player.y,
         radius: 60,
-        text: '🗡️ ¡PASO SOMBRÍO!',
         color: '#10b981',
       });
     }
@@ -1210,10 +1229,10 @@ export class DungeonRoom {
         player.currentHp = Math.min(player.maxHp, player.currentHp + relic.modifiers.maxHpBonus);
       }
       this.emitFX({
-        type: 'CRIT',
+        type: 'SHOCKWAVE',
         x: player.x,
-        y: player.y - 25,
-        text: `${relic.icon} ${relic.name}`,
+        y: player.y,
+        radius: 65,
         color: '#f59e0b',
       });
       this.broadcastState();
@@ -1236,10 +1255,10 @@ export class DungeonRoom {
       player.weaponLevel += 1;
       this.altar.weaponUpgradeCost = Math.round(this.altar.weaponUpgradeCost * 1.35);
       this.emitFX({
-        type: 'CRIT',
+        type: 'SHOCKWAVE',
         x: player.x,
-        y: player.y - 28,
-        text: `⚒️ ARMA NIVEL ${player.weaponLevel}!`,
+        y: player.y,
+        radius: 75,
         color: '#facc15',
       });
     } else if (action === 'BUY_HEAL') {
@@ -1249,8 +1268,7 @@ export class DungeonRoom {
       this.emitFX({
         type: 'REVIVE',
         x: player.x,
-        y: player.y - 24,
-        text: '+65 HP',
+        y: player.y,
         color: '#22c55e',
       });
     } else if (action === 'BUY_SHIELD') {
@@ -1262,7 +1280,6 @@ export class DungeonRoom {
         x: player.x,
         y: player.y,
         radius: 50,
-        text: '🛡️ +50 ESCUDO',
         color: '#38bdf8',
       });
     } else if (action === 'ACCEPT_PACT') {
@@ -1318,7 +1335,6 @@ export class DungeonRoom {
         x: this.altar.x,
         y: this.altar.y,
         radius: 140,
-        text: `⚖️ ¡${pact.title.toUpperCase()}!`,
         color: '#a855f7',
       });
     }
@@ -1428,7 +1444,6 @@ export class DungeonRoom {
         y: cy,
         radius: 210,
         color: '#facc15',
-        text: '🗝️ ¡SALA OCULTA DESCUBIERTA!',
       });
 
       this.directorDialogue = {
@@ -1543,7 +1558,6 @@ export class DungeonRoom {
             y: s.y,
             radius: 135,
             color: '#38bdf8',
-            text: `👁️ ¡${s.label || 'SELLO'} SINCRONIZADO!`,
           });
         }
       } else {
@@ -1561,7 +1575,6 @@ export class DungeonRoom {
         y: cy,
         radius: 320,
         color: '#22c55e',
-        text: '⚡ ¡OJO CENTRAL SINCRONIZADO: SOBRECARGA ARCANA!',
       });
 
       for (const p of alivePlayers) {
@@ -1572,11 +1585,27 @@ export class DungeonRoom {
         p.comboExpiresAt = now + 7000;
       }
 
+      // If a Boss is shielded, synchronizing the seals shatters the Boss Shield and destroys tethered minions!
+      for (let i = this.enemies.length - 1; i >= 0; i--) {
+        const e = this.enemies[i];
+        if (e.isBoss && e.bossShieldActive) {
+          e.bossShieldActive = false;
+          e.stunUntil = now + 3600;
+          this.emitFX({
+            type: 'SHOCKWAVE',
+            x: e.x,
+            y: e.y,
+            radius: 260,
+            color: '#38bdf8',
+          });
+        }
+      }
+
       // Blast all active enemies with the Central Eye's overload!
       for (let i = this.enemies.length - 1; i >= 0; i--) {
         const e = this.enemies[i];
-        e.stunUntil = now + 2600;
-        const eyeDmg = Math.max(45, Math.round(e.maxHp * 0.42));
+        e.stunUntil = Math.max(e.stunUntil || 0, now + 2600);
+        const eyeDmg = e.isBoss ? Math.round(e.maxHp * 0.08) : Math.max(45, Math.round(e.maxHp * 0.42));
         this.applyDamageToEnemy(e, i, eyeDmg, alivePlayers[0], true, 'LIGHTNING', now);
       }
     }
@@ -1854,7 +1883,6 @@ export class DungeonRoom {
             x: fallen.x,
             y: fallen.y,
             radius: 90,
-            text: `✨ ¡${fallen.name} REVIVIDO!`,
             color: '#22c55e',
           });
         }
@@ -2270,7 +2298,6 @@ export class DungeonRoom {
             y: e.y,
             radius: 90,
             color: '#f97316',
-            text: '💥 ¡KABOOM!',
           });
           for (const p of alivePlayers) {
             if (Math.hypot(p.x - e.x, p.y - e.y) <= 92) {
@@ -2286,10 +2313,10 @@ export class DungeonRoom {
           if (minDist < 230 || e.currentHp < e.maxHp || this.enemies.length <= 2) {
             e.aiState = 'ATTACKING';
             this.emitFX({
-              type: 'CRIT',
+              type: 'SHOCKWAVE',
               x: e.x,
-              y: e.y - 22,
-              text: '🦷 ¡MÍMICO DESPIERTO!',
+              y: e.y,
+              radius: 75,
               color: '#f59e0b',
             });
           }
@@ -2467,10 +2494,9 @@ export class DungeonRoom {
   }
 
   /**
-   * Multi-Pattern Adaptive Boss AI supporting 3 Distinct Boss Archetypes:
-   * - BOSS_TITAN (Room 3): Volcanic leaps, lava trails, 12-way magma rings, summons KAMIKAZE imps
-   * - BOSS_ARACHNID (Room 6): Venom spirals, toxic web fields, summons ARANA & ESPIRITU swarms
-   * - BOSS_DIRECTOR (Room 9+): Arcane lasers, meteor storms, spiral barrages, summons CENTINELA eyes
+   * Multi-Phase, Multi-Pattern Adaptive Boss AI supporting 3 Distinct Boss Archetypes:
+   * - 3 Phases (100% -> 68% -> 35% -> 0% HP) with tethered Ritual Pylon Immunity Shields & Co-op Disruption Seals
+   * - 6 Distinct High-Skill Patterns: SPIRAL, LASER_SWEEP, CHARGE_SLAM, METEOR_RAIN, GRAVITY_VORTEX, CROSS_BARRAGE
    */
   private updateBossAI(
     e: EnemyEntity,
@@ -2479,17 +2505,48 @@ export class DungeonRoom {
     dt: number,
     now: number
   ): void {
-    const isPhase2 = e.currentHp <= e.maxHp * 0.5;
-    if (isPhase2 && e.bossPhase === 1) {
+    const W = this.roomWidth;
+    const H = this.roomHeight;
+    const hpRatio = e.currentHp / Math.max(1, e.maxHp);
+    const currentPhase = e.bossPhase || 1;
+
+    // Check if tethered Ritual Pylons were all destroyed to shatter Boss Shield!
+    if (e.bossShieldActive) {
+      const activeMinions = this.enemies.filter(other => !other.isBoss);
+      if (activeMinions.length === 0) {
+        e.bossShieldActive = false;
+        e.stunUntil = now + 3600;
+        for (const s of this.seals) {
+          s.isActivated = true;
+          s.progress = 1;
+        }
+        this.emitFX({
+          type: 'SHOCKWAVE',
+          x: e.x,
+          y: e.y,
+          radius: 290,
+          color: '#38bdf8',
+        });
+      }
+    }
+
+    // Phase 2 Transition (at 68% HP) -> Activates Immunity Carapace + 3 Tethered Ritual Guardians + Co-op Seals
+    if (hpRatio <= 0.68 && currentPhase < 2) {
       e.bossPhase = 2;
+      e.bossShieldActive = true;
+      for (const s of this.seals) {
+        s.isActivated = false;
+        s.progress = 0;
+      }
+
       this.directorDialogue = {
         speaker: e.name,
         text:
           e.type === 'BOSS_TITAN'
-            ? '¡FASE 2: NÚCLEO VOLCÁNICO SOBRECARGADO! ¡ARDAN EN CENIZAS!'
+            ? '¡FASE 2: CORAZA DE OBSIDIANA! ¡DESTRUYAN MIS CENTINELAS O SINCRONICEN LOS SELLOS SI PUEDEN!'
             : e.type === 'BOSS_ARACHNID'
-            ? '¡FASE 2: ECLOSIÓN DEL NIDO ABISAL! ¡DEVÓRENLOS, MIS CRÍAS!'
-            : '¡FASE 2 ACTIVADA! ¡EL TRIBUNAL DICTA SENTENCIA INMEDIATA!',
+            ? '¡FASE 2: CAPULLO ABISAL! ¡MIS GUARDIANES DE SEDA ALIMENTAN MI ESCUDO!'
+            : '¡FASE 2: PROTOCOLO DE INMUNIDAD! ¡LOS PILONES ARCANOS SOSTIENEN MI BARRERA!',
         mood: 'ANGRY',
         timestamp: now,
       };
@@ -2497,145 +2554,311 @@ export class DungeonRoom {
         type: 'SHOCKWAVE',
         x: e.x,
         y: e.y,
-        radius: 280,
-        text: '🔥 ¡FASE 2: FURIA DESATADA!',
+        radius: 300,
         color: e.color,
       });
 
-      // Phase 2 Boss Minion Summon!
-      if (this.enemies.length < 5) {
-        if (e.type === 'BOSS_TITAN') {
-          this.createEnemy('KAMIKAZE', this.roomIndex, 1.0, false, e.x - 90, e.y + 60);
-          this.createEnemy('KAMIKAZE', this.roomIndex, 1.0, false, e.x + 90, e.y + 60);
-        } else if (e.type === 'BOSS_ARACHNID') {
-          this.createEnemy('ARANA', this.roomIndex, 1.0, false, e.x - 100, e.y + 60);
-          this.createEnemy('ESPIRITU', this.roomIndex, 1.0, false, e.x + 100, e.y + 60);
-        } else {
-          this.createEnemy('CENTINELA', this.roomIndex, 1.0, false, e.x - 120, e.y + 70);
-          this.createEnemy('CENTINELA', this.roomIndex, 1.0, false, e.x + 120, e.y + 70);
-        }
+      const pylonSpots = [
+        { x: Math.round(W * 0.25), y: Math.round(H * 0.36) },
+        { x: Math.round(W * 0.75), y: Math.round(H * 0.36) },
+        { x: Math.round(W * 0.5), y: Math.round(H * 0.66) },
+      ];
+      if (e.type === 'BOSS_TITAN') {
+        this.createEnemy('CENTINELA', this.roomIndex, 1.15, false, pylonSpots[0].x, pylonSpots[0].y);
+        this.createEnemy('CENTINELA', this.roomIndex, 1.15, false, pylonSpots[1].x, pylonSpots[1].y);
+        this.createEnemy('GOLEM', this.roomIndex, 1.1, false, pylonSpots[2].x, pylonSpots[2].y);
+      } else if (e.type === 'BOSS_ARACHNID') {
+        this.createEnemy('ARANA', this.roomIndex, 1.2, false, pylonSpots[0].x, pylonSpots[0].y);
+        this.createEnemy('ARANA', this.roomIndex, 1.2, false, pylonSpots[1].x, pylonSpots[1].y);
+        this.createEnemy('CENTINELA', this.roomIndex, 1.15, false, pylonSpots[2].x, pylonSpots[2].y);
+      } else {
+        this.createEnemy('CENTINELA', this.roomIndex, 1.2, false, pylonSpots[0].x, pylonSpots[0].y);
+        this.createEnemy('CENTINELA', this.roomIndex, 1.2, false, pylonSpots[1].x, pylonSpots[1].y);
+        this.createEnemy('NIGROMANTE', this.roomIndex, 1.2, false, pylonSpots[2].x, pylonSpots[2].y);
       }
     }
 
+    // Phase 3 Transition (at 35% HP) -> Final Cataclysm + Elite Ritual Guardians + Co-op Seals
+    if (hpRatio <= 0.35 && currentPhase < 3) {
+      e.bossPhase = 3;
+      e.bossShieldActive = true;
+      for (const s of this.seals) {
+        s.isActivated = false;
+        s.progress = 0;
+      }
+
+      this.directorDialogue = {
+        speaker: e.name,
+        text:
+          e.type === 'BOSS_TITAN'
+            ? '¡FASE 3: ERUPCIÓN DEL TÁRTARO! ¡LA FRAGUA ENTERA SE DERRUMBA SOBRE USTEDES!'
+            : e.type === 'BOSS_ARACHNID'
+            ? '¡FASE 3: FRENESÍ DE LA MATRIARCA! ¡EL VÓRTICE VENENOSO LOS TRAGARÁ!'
+            : '¡FASE 3: SINGULARIDAD DEL ARQUITECTO! ¡BORRADO TOTAL DEL SISTEMA!',
+        mood: 'CHAOTIC',
+        timestamp: now,
+      };
+      this.emitFX({
+        type: 'DIRECTOR_INTERVENTION',
+        x: e.x,
+        y: e.y,
+        radius: 340,
+        color: '#ef4444',
+      });
+
+      const pylonSpots = [
+        { x: Math.round(W * 0.24), y: Math.round(H * 0.34) },
+        { x: Math.round(W * 0.76), y: Math.round(H * 0.34) },
+        { x: Math.round(W * 0.5), y: Math.round(H * 0.68) },
+      ];
+      if (e.type === 'BOSS_TITAN') {
+        this.createEnemy('CENTINELA', this.roomIndex, 1.25, true, pylonSpots[0].x, pylonSpots[0].y);
+        this.createEnemy('CENTINELA', this.roomIndex, 1.25, true, pylonSpots[1].x, pylonSpots[1].y);
+        this.createEnemy('KAMIKAZE', this.roomIndex, 1.2, false, pylonSpots[2].x, pylonSpots[2].y);
+      } else if (e.type === 'BOSS_ARACHNID') {
+        this.createEnemy('CENTINELA', this.roomIndex, 1.25, true, pylonSpots[0].x, pylonSpots[0].y);
+        this.createEnemy('ARANA', this.roomIndex, 1.25, true, pylonSpots[1].x, pylonSpots[1].y);
+        this.createEnemy('ESPIRITU', this.roomIndex, 1.2, false, pylonSpots[2].x, pylonSpots[2].y);
+      } else {
+        this.createEnemy('CENTINELA', this.roomIndex, 1.3, true, pylonSpots[0].x, pylonSpots[0].y);
+        this.createEnemy('CENTINELA', this.roomIndex, 1.3, true, pylonSpots[1].x, pylonSpots[1].y);
+        this.createEnemy('ESPIRITU', this.roomIndex, 1.25, true, pylonSpots[2].x, pylonSpots[2].y);
+      }
+    }
+
+    const phase = e.bossPhase || 1;
     e.stateTimer = (e.stateTimer || 0) + dt * 1000;
-    const patternIndex = Math.floor(e.stateTimer / 4800) % 4;
+    const patternIndex = Math.floor(e.stateTimer / 4200) % 6;
     const patterns: Array<EnemyEntity['bossPattern']> = [
       'SPIRAL',
-      'METEOR_RAIN',
       'LASER_SWEEP',
       'CHARGE_SLAM',
+      'METEOR_RAIN',
+      'GRAVITY_VORTEX',
+      'CROSS_BARRAGE',
     ];
     e.bossPattern = patterns[patternIndex];
 
     if (e.bossPattern === 'CHARGE_SLAM') {
-      // Moves aggressively toward target player and slams
+      // Predatory high-speed lunge toward target player
       e.aiState = 'ATTACKING';
-      const chargeMult = e.type === 'BOSS_TITAN' ? 1.75 : isPhase2 ? 1.65 : 1.35;
+      const chargeMult = (e.type === 'BOSS_TITAN' ? 1.8 : 1.55) + (phase - 1) * 0.18;
       e.vx = Math.cos(angleToTarget) * e.speed * chargeMult;
       e.vy = Math.sin(angleToTarget) * e.speed * chargeMult;
 
-      if (Math.hypot(target.x - e.x, target.y - e.y) < e.radius + 22) {
+      if (Math.hypot(target.x - e.x, target.y - e.y) < e.radius + 24) {
         this.damagePlayer(target, e.damage);
       }
-    } else {
-      // Hover and weave across arena
-      e.aiState = e.bossPattern === 'LASER_SWEEP' ? 'CHARGING' : 'IDLE';
+    } else if (e.bossPattern === 'GRAVITY_VORTEX') {
+      // Moves to center of the arena and pulls players inward!
+      e.aiState = 'CHARGING';
       e.aimAngle = angleToTarget;
-      const centerX = this.roomWidth / 2 + Math.sin(now / 850) * 240;
-      const centerY = 260 + Math.cos(now / 650) * 85;
-      e.vx = (centerX - e.x) * 1.15;
-      e.vy = (centerY - e.y) * 1.15;
+      const centerX = W / 2;
+      const centerY = H * 0.44;
+      e.vx = (centerX - e.x) * 1.6;
+      e.vy = (centerY - e.y) * 1.6;
+
+      for (const p of Object.values(this.players)) {
+        if (!p.isAlive || p.isDashing) continue;
+        const pullAngle = Math.atan2(e.y - p.y, e.x - p.x);
+        const pullSpeed = 48 + phase * 12;
+        p.x += Math.cos(pullAngle) * pullSpeed * dt;
+        p.y += Math.sin(pullAngle) * pullSpeed * dt;
+      }
+    } else {
+      // Figure-8 tactical arena weaving
+      e.aiState = e.bossPattern === 'LASER_SWEEP' || e.bossPattern === 'CROSS_BARRAGE' ? 'CHARGING' : 'IDLE';
+      e.aimAngle = angleToTarget;
+      const centerX = W / 2 + Math.sin(now / 780) * 290;
+      const centerY = 270 + Math.cos(now / 540) * 115;
+      e.vx = (centerX - e.x) * 1.25;
+      e.vy = (centerY - e.y) * 1.25;
     }
 
-    const attackInterval = isPhase2 ? 920 : 1350;
+    const attackInterval = phase === 3 ? 740 : phase === 2 ? 940 : 1220;
     if (now - e.lastAttackAt >= attackInterval) {
       e.lastAttackAt = now;
+      const projElement = e.type === 'BOSS_TITAN' ? 'FIRE' : e.type === 'BOSS_ARACHNID' ? 'POISON' : 'NONE';
+      const primaryColor =
+        e.type === 'BOSS_TITAN'
+          ? '#f97316'
+          : e.type === 'BOSS_ARACHNID'
+          ? '#84cc16'
+          : phase >= 2
+          ? '#dc2626'
+          : '#d97706';
 
-      if (e.bossPattern === 'SPIRAL' || e.bossPattern === 'CHARGE_SLAM') {
-        const bulletCount = isPhase2 ? 12 : 9;
-        const projElement = e.type === 'BOSS_TITAN' ? 'FIRE' : e.type === 'BOSS_ARACHNID' ? 'POISON' : 'NONE';
-        const projColor =
-          e.type === 'BOSS_TITAN'
-            ? '#f97316'
-            : e.type === 'BOSS_ARACHNID'
-            ? '#84cc16'
-            : isPhase2
-            ? '#dc2626'
-            : '#d97706';
-
-        for (let i = 0; i < bulletCount; i++) {
-          const shotAngle = (i / bulletCount) * Math.PI * 2 + now / 310;
+      if (e.bossPattern === 'SPIRAL') {
+        // Counter-rotating double spiral bullet-hell
+        const arms = 8 + phase * 2;
+        const bulletSpeed = 235 + phase * 28;
+        for (let i = 0; i < arms; i++) {
+          const cwAngle = (i / arms) * Math.PI * 2 + now / 290;
           this.projectiles.push({
             id: `proj_${this.nextProjectileId++}`,
             ownerId: e.id,
             fromPlayer: false,
-            x: e.x + Math.cos(shotAngle) * 44,
-            y: e.y + Math.sin(shotAngle) * 44,
-            vx: Math.cos(shotAngle) * (isPhase2 ? 285 : 225),
-            vy: Math.sin(shotAngle) * (isPhase2 ? 285 : 225),
+            x: e.x + Math.cos(cwAngle) * 48,
+            y: e.y + Math.sin(cwAngle) * 48,
+            vx: Math.cos(cwAngle) * bulletSpeed,
+            vy: Math.sin(cwAngle) * bulletSpeed,
             radius: 10,
             damage: e.damage,
-            color: projColor,
-            bouncesRemaining: isPhase2 ? 1 : 0,
+            color: primaryColor,
+            bouncesRemaining: phase >= 3 ? 1 : 0,
             createdAt: now,
-            lifetimeMs: 3200,
+            lifetimeMs: 3400,
+            element: projElement,
+          });
+
+          if (phase >= 2) {
+            const ccwAngle = (i / arms) * Math.PI * 2 - now / 340;
+            this.projectiles.push({
+              id: `proj_${this.nextProjectileId++}`,
+              ownerId: e.id,
+              fromPlayer: false,
+              x: e.x + Math.cos(ccwAngle) * 48,
+              y: e.y + Math.sin(ccwAngle) * 48,
+              vx: Math.cos(ccwAngle) * (bulletSpeed * 0.82),
+              vy: Math.sin(ccwAngle) * (bulletSpeed * 0.82),
+              radius: 8,
+              damage: e.damage - 2,
+              color: '#facc15',
+              bouncesRemaining: 0,
+              createdAt: now,
+              lifetimeMs: 3200,
+              element: projElement,
+            });
+          }
+        }
+      } else if (e.bossPattern === 'CHARGE_SLAM') {
+        // Radial shockwave burst + elemental trail pool
+        const ringCount = 10 + phase * 2;
+        for (let i = 0; i < ringCount; i++) {
+          const shotAngle = (i / ringCount) * Math.PI * 2;
+          this.projectiles.push({
+            id: `proj_${this.nextProjectileId++}`,
+            ownerId: e.id,
+            fromPlayer: false,
+            x: e.x + Math.cos(shotAngle) * 46,
+            y: e.y + Math.sin(shotAngle) * 46,
+            vx: Math.cos(shotAngle) * (250 + phase * 25),
+            vy: Math.sin(shotAngle) * (250 + phase * 25),
+            radius: 10,
+            damage: e.damage,
+            color: primaryColor,
+            bouncesRemaining: phase >= 2 ? 1 : 0,
+            createdAt: now,
+            lifetimeMs: 3000,
             element: projElement,
           });
         }
 
-        // Titan leaves lava pools during Charge Slam!
-        if (e.type === 'BOSS_TITAN' && e.bossPattern === 'CHARGE_SLAM' && this.hazards.length < 12) {
+        if (this.hazards.length < 14) {
           this.hazards.push({
-            id: `titan_lava_${this.nextEventId++}`,
-            type: 'LAVA',
+            id: `boss_trail_${this.nextEventId++}`,
+            type: e.type === 'BOSS_ARACHNID' ? 'POISON_CLOUD' : 'LAVA',
             x: e.x,
             y: e.y,
-            radius: 54,
+            radius: 58,
             active: true,
             createdAt: now,
-            durationMs: 6000,
+            durationMs: 5500,
             damage: 14,
           });
         }
       } else if (e.bossPattern === 'METEOR_RAIN') {
         for (const p of Object.values(this.players)) {
           if (!p.isAlive) continue;
-          this.hazards.push({
-            id: `meteor_${this.nextEventId++}`,
-            type: e.type === 'BOSS_ARACHNID' ? 'POISON_CLOUD' : 'METEOR_STRIKE',
-            x: p.x + (Math.random() * 60 - 30),
-            y: p.y + (Math.random() * 60 - 30),
-            radius: 68,
-            active: true,
-            createdAt: now,
-            durationMs: e.type === 'BOSS_ARACHNID' ? 4500 : 1300,
-            damage: e.type === 'BOSS_ARACHNID' ? 11 : e.damage + 4,
-          });
-        }
-        // Periodically summon 1 helper minion if below cap
-        if (this.enemies.length < 4 && Math.random() < 0.45) {
-          const minionType: EnemyType =
-            e.type === 'BOSS_TITAN' ? 'KAMIKAZE' : e.type === 'BOSS_ARACHNID' ? 'ARANA' : 'ESPIRITU';
-          this.createEnemy(minionType, this.roomIndex, 0.9, false, e.x + (Math.random() * 160 - 80), e.y + 60);
+          const strikes = phase >= 2 ? 2 : 1;
+          for (let k = 0; k < strikes; k++) {
+            const offsetAngle = Math.random() * Math.PI * 2;
+            const offsetDist = k === 0 ? Math.random() * 35 : 95 + Math.random() * 55;
+            this.hazards.push({
+              id: `meteor_${this.nextEventId++}`,
+              type: e.type === 'BOSS_ARACHNID' ? 'POISON_CLOUD' : 'METEOR_STRIKE',
+              x: Math.max(80, Math.min(W - 80, p.x + Math.cos(offsetAngle) * offsetDist)),
+              y: Math.max(80, Math.min(H - 80, p.y + Math.sin(offsetAngle) * offsetDist)),
+              radius: 68,
+              active: true,
+              createdAt: now,
+              durationMs: e.type === 'BOSS_ARACHNID' ? 4500 : 1250,
+              damage: e.type === 'BOSS_ARACHNID' ? 12 : e.damage + 4,
+            });
+          }
         }
       } else if (e.bossPattern === 'LASER_SWEEP') {
-        for (let s = -2; s <= 2; s++) {
-          const a = angleToTarget + s * 0.14;
+        const fanCount = phase >= 3 ? 7 : 5;
+        const half = Math.floor(fanCount / 2);
+        const sweepOffset = Math.sin(now / 260) * 0.28;
+        for (let s = -half; s <= half; s++) {
+          const a = angleToTarget + sweepOffset + s * 0.13;
           this.projectiles.push({
             id: `proj_${this.nextProjectileId++}`,
             ownerId: e.id,
             fromPlayer: false,
-            x: e.x + Math.cos(a) * 44,
-            y: e.y + Math.sin(a) * 44,
-            vx: Math.cos(a) * 430,
-            vy: Math.sin(a) * 430,
+            x: e.x + Math.cos(a) * 46,
+            y: e.y + Math.sin(a) * 46,
+            vx: Math.cos(a) * (440 + phase * 30),
+            vy: Math.sin(a) * (440 + phase * 30),
             radius: 9,
             damage: e.damage,
             color: e.type === 'BOSS_ARACHNID' ? '#a3e635' : '#ef4444',
             bouncesRemaining: 1,
             createdAt: now,
             lifetimeMs: 2600,
+            element: projElement,
           });
+        }
+      } else if (e.bossPattern === 'GRAVITY_VORTEX') {
+        // Expanding shockwave ring with safe dash gaps
+        const totalSlots = 16;
+        const gapStart = Math.floor(now / 400) % totalSlots;
+        for (let i = 0; i < totalSlots; i++) {
+          if (i === gapStart || i === (gapStart + 1) % totalSlots || i === (gapStart + 8) % totalSlots) continue;
+          const a = (i / totalSlots) * Math.PI * 2;
+          this.projectiles.push({
+            id: `proj_${this.nextProjectileId++}`,
+            ownerId: e.id,
+            fromPlayer: false,
+            x: e.x + Math.cos(a) * 50,
+            y: e.y + Math.sin(a) * 50,
+            vx: Math.cos(a) * (260 + phase * 22),
+            vy: Math.sin(a) * (260 + phase * 22),
+            radius: 10,
+            damage: e.damage,
+            color: '#c084fc',
+            bouncesRemaining: 0,
+            createdAt: now,
+            lifetimeMs: 3200,
+            element: projElement,
+          });
+        }
+      } else if (e.bossPattern === 'CROSS_BARRAGE') {
+        // 4-Arm / 8-Arm rotating cross blades + aimed lance at target
+        const crossArms = phase >= 2 ? 8 : 4;
+        const baseRot = now / 380;
+        for (let c = 0; c < crossArms; c++) {
+          const a = baseRot + (c / crossArms) * Math.PI * 2;
+          for (let layer = 0; layer < 2; layer++) {
+            const spd = (320 + layer * 85) + phase * 20;
+            this.projectiles.push({
+              id: `proj_${this.nextProjectileId++}`,
+              ownerId: e.id,
+              fromPlayer: false,
+              x: e.x + Math.cos(a) * 44,
+              y: e.y + Math.sin(a) * 44,
+              vx: Math.cos(a) * spd,
+              vy: Math.sin(a) * spd,
+              radius: 9,
+              damage: e.damage,
+              color: primaryColor,
+              bouncesRemaining: 1,
+              createdAt: now,
+              lifetimeMs: 2800,
+              element: projElement,
+            });
+          }
         }
       }
     }
@@ -2776,10 +2999,10 @@ export class DungeonRoom {
               p.color = '#facc15';
               p.createdAt = now;
               this.emitFX({
-                type: 'CRIT',
+                type: 'SHOCKWAVE',
                 x: pl.x,
-                y: pl.y - 20,
-                text: '🛡️ ¡REFLEJADO!',
+                y: pl.y,
+                radius: 48,
                 color: '#facc15',
               });
               hit = false; // Keep reflected projectile alive!
@@ -2915,6 +3138,10 @@ export class DungeonRoom {
     if (e.eliteModifier === 'BLINDADO') {
       finalDamage = Math.round(finalDamage * 0.8);
     }
+    // Boss Ritual Shield Carapace reduces incoming damage by 88% until tethered Pylons or Co-op Seals are completed!
+    if (e.isBoss && e.bossShieldActive) {
+      finalDamage = Math.max(1, Math.round(finalDamage * 0.12));
+    }
 
     // Check Cross-Elemental Co-op Synergy!
     const wasBurning = e.burnUntil && now < e.burnUntil;
@@ -2941,7 +3168,6 @@ export class DungeonRoom {
         x: e.x,
         y: e.y - 18,
         radius: 95,
-        text: '⚡ ¡SINERGIA ELEMENTAL!',
         color: '#c084fc',
       });
     }
@@ -3116,7 +3342,6 @@ export class DungeonRoom {
         x: candidate.x,
         y: candidate.y,
         radius: 110,
-        text: '⚡ ¡INTERVENCIÓN DEL DIRECTOR!',
         color: '#ef4444',
       });
     }
@@ -3178,7 +3403,6 @@ export class DungeonRoom {
           y: this.roomHeight / 2,
           radius: 220,
           color: '#f59e0b',
-          text: `⚔️ ¡OLEADA ${this.currentWave} / ${this.totalWaves} EN CAMINO!`,
         });
         return;
       }
@@ -3222,7 +3446,6 @@ export class DungeonRoom {
             y: this.roomHeight / 2,
             radius: 280,
             color: '#22c55e',
-            text: '🏆 ¡JEFE DERROTADO: PORTALES ABIERTOS!',
           });
         } else {
           this.directorDialogue = this.director.getDirectorQuote('roomClear');
@@ -3232,7 +3455,6 @@ export class DungeonRoom {
             y: this.roomHeight / 2,
             radius: 220,
             color: '#22c55e',
-            text: '🚪 ¡SALA DESPEJADA: PORTALES ABIERTOS!',
           });
         }
       }
@@ -3472,7 +3694,15 @@ export class DungeonRoom {
     const enemiesTick = this.enemies.map(e => ({
       id: e.id,
       type: e.type,
-      ...(e.isBoss ? { name: e.name, isBoss: true, bossPhase: e.bossPhase, bossPattern: e.bossPattern } : {}),
+      ...(e.isBoss
+        ? {
+            name: e.name,
+            isBoss: true,
+            bossPhase: e.bossPhase,
+            bossShieldActive: e.bossShieldActive,
+            bossPattern: e.bossPattern,
+          }
+        : {}),
       x: Math.round(e.x),
       y: Math.round(e.y),
       vx: Math.round(e.vx),

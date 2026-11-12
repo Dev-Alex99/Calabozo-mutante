@@ -122,7 +122,8 @@ export interface EnemyEntity {
   aimAngle?: number;
   isBoss?: boolean;
   bossPhase?: number;
-  bossPattern?: 'SPIRAL' | 'METEOR_RAIN' | 'LASER_SWEEP' | 'CHARGE_SLAM';
+  bossShieldActive?: boolean;
+  bossPattern?: 'SPIRAL' | 'METEOR_RAIN' | 'LASER_SWEEP' | 'CHARGE_SLAM' | 'GRAVITY_VORTEX' | 'CROSS_BARRAGE';
   isElite?: boolean;
   eliteModifier?: EliteModifier;
   flashUntil?: number;

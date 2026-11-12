@@ -44,12 +44,12 @@ export class SpriteModels {
     }
 
     if (!player.isAlive) {
-      // Co-op Soul Revival Circle (68px radius)
+      // Co-op Soul Revival Circle (68px radius) — Purely visual runic resurrection ritual
       const revProg = player.reviveProgress || 0;
       const pulseR = 64 + Math.sin(time * 5) * 4;
-      ctx.strokeStyle = revProg > 0 ? 'rgba(34, 197, 94, 0.75)' : 'rgba(245, 158, 11, 0.35)';
+      ctx.strokeStyle = revProg > 0 ? 'rgba(34, 197, 94, 0.78)' : 'rgba(245, 158, 11, 0.38)';
       ctx.lineWidth = 2;
-      ctx.setLineDash([6, 6]);
+      ctx.setLineDash([8, 6]);
       ctx.beginPath();
       ctx.arc(0, 0, pulseR, 0, Math.PI * 2);
       ctx.stroke();
@@ -57,41 +57,55 @@ export class SpriteModels {
 
       if (revProg > 0) {
         ctx.strokeStyle = '#22c55e';
-        ctx.lineWidth = 4;
+        ctx.lineWidth = 4.5;
         ctx.beginPath();
-        ctx.arc(0, 0, 32, -Math.PI / 2, -Math.PI / 2 + revProg * Math.PI * 2);
+        ctx.arc(0, 0, 34, -Math.PI / 2, -Math.PI / 2 + revProg * Math.PI * 2);
         ctx.stroke();
       }
 
-      // Fallen Hero: Skeletal tombstone & pool of blood
+      // Fallen Hero: crimson pool, shattered shield, sword planted in stone & hovering soul wisp
       ctx.fillStyle = '#450a0a';
       ctx.beginPath();
-      ctx.ellipse(0, 4, 18, 9, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 6, 20, 9, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      // Stone grave marker
-      ctx.fillStyle = '#44403c';
-      ctx.strokeStyle = '#292524';
-      ctx.lineWidth = 2;
+      // Fallen cloak & pauldron
+      ctx.fillStyle = '#292524';
       ctx.beginPath();
-      ctx.roundRect(-10, -20, 20, 24, [6, 6, 0, 0]);
+      ctx.moveTo(-14, 2);
+      ctx.quadraticCurveTo(0, -6, 14, 4);
+      ctx.lineTo(10, 10);
+      ctx.lineTo(-12, 8);
+      ctx.closePath();
       ctx.fill();
-      ctx.stroke();
 
-      // Inscribed cross
-      ctx.strokeStyle = '#1c1917';
-      ctx.lineWidth = 2;
+      // Planted Broadsword (Hilt + Crossguard + Blade in ground)
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.moveTo(0, -16);
-      ctx.lineTo(0, -6);
-      ctx.moveTo(-5, -12);
-      ctx.lineTo(5, -12);
+      ctx.moveTo(0, 4);
+      ctx.lineTo(0, -22);
       ctx.stroke();
 
-      ctx.fillStyle = revProg > 0 ? '#4ade80' : '#f59e0b';
-      ctx.font = 'bold 10px "Cinzel", serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(revProg > 0 ? `REVIVIENDO ${Math.round(revProg * 100)}%` : '⚰️ REVIVIR ALIADO', 0, -26);
+      ctx.strokeStyle = '#d97706';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(-8, -14);
+      ctx.lineTo(8, -14);
+      ctx.stroke();
+
+      // Hovering Soul Flame Wisp above the sword hilt
+      const soulY = -28 + Math.sin(time * 6) * 3;
+      ctx.fillStyle = revProg > 0 ? 'rgba(74, 222, 128, 0.35)' : 'rgba(56, 189, 248, 0.3)';
+      ctx.beginPath();
+      ctx.arc(0, soulY, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = revProg > 0 ? '#4ade80' : '#38bdf8';
+      ctx.beginPath();
+      ctx.moveTo(-4, soulY + 2);
+      ctx.quadraticCurveTo(0, soulY - 10, 4, soulY + 2);
+      ctx.arc(0, soulY + 2, 4, 0, Math.PI);
+      ctx.fill();
 
       ctx.restore();
       return;
@@ -158,21 +172,29 @@ export class SpriteModels {
 
     ctx.restore();
 
-    // Overhead HUD: Name, Weapon Level, Combo & Health Bar
-    const comboBadge = player.combo >= 3 ? ` 🔥x${player.combo}` : '';
-    const labelText = `${player.name}${player.isHost ? ' 👑' : ''}${comboBadge}`;
-    ctx.font = 'bold 11px "Cinzel", serif';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#090807';
-    ctx.fillText(labelText, 1, -28);
-    ctx.fillStyle = isLocal ? '#f59e0b' : '#d6d3d1';
-    ctx.fillText(labelText, 0, -29);
-
-    this.drawGothicHealthBar(ctx, 0, -20, 38, 5, player.currentHp, player.maxHp);
+    // Overhead Visual Indicators: Health Bar, Shield Bar & Host Golden Crown (Zero Text Clutter)
+    this.drawGothicHealthBar(ctx, 0, -22, 38, 5, player.currentHp, player.maxHp);
     if (player.shieldHp > 0) {
       const shieldPct = Math.min(1, player.shieldHp / 100);
       ctx.fillStyle = '#38bdf8';
-      ctx.fillRect(-19, -24, 38 * shieldPct, 2.5);
+      ctx.fillRect(-19, -26, 38 * shieldPct, 2.5);
+    }
+    if (player.isHost) {
+      // Forged Golden Crown emblem above host's health bar
+      ctx.fillStyle = '#facc15';
+      ctx.strokeStyle = '#78350f';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(-6, -29);
+      ctx.lineTo(-7, -35);
+      ctx.lineTo(-3, -32);
+      ctx.lineTo(0, -37);
+      ctx.lineTo(3, -32);
+      ctx.lineTo(7, -35);
+      ctx.lineTo(6, -29);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
     }
 
     ctx.restore();
@@ -734,375 +756,1198 @@ export class SpriteModels {
       ctx.fill();
     }
 
-    // Elemental Status Overlays (Burn, Poison, Chill, Stun)
-    let statusIcons = '';
-    if (enemy.burnUntil && now < enemy.burnUntil) statusIcons += '🔥';
-    if (enemy.poisonUntil && now < enemy.poisonUntil) statusIcons += '☠️';
-    if (enemy.chillUntil && now < enemy.chillUntil) statusIcons += '❄️';
-    if (enemy.stunUntil && now < enemy.stunUntil) statusIcons += '💫';
-
-    if (statusIcons || enemy.isElite) {
-      ctx.fillStyle = '#fde047';
-      ctx.font = 'bold 10px "Cinzel", serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(
-        `${enemy.isElite ? `★ ${enemy.eliteModifier || 'ÉLITE'} ` : ''}${statusIcons}`,
-        0,
-        -enemy.radius - 18
-      );
-    }
-
-    ctx.restore();
-  }
-
-  private static drawGolem(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
-    const isCharging = enemy.aiState === 'CHARGING';
-    const heave = Math.sin(time * 5) * 2;
-
-    // Heavy shadow
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-    ctx.beginPath();
-    ctx.ellipse(0, 22, 26, 10, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Massive Chiseled Basalt Torso
-    ctx.fillStyle = '#292524';
-    ctx.strokeStyle = isCharging ? '#ea580c' : '#57534e';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.roundRect(-22, -22 + heave, 44, 42, [8]);
-    ctx.fill();
-    ctx.stroke();
-
-    // Glowing Magma Core Cracks
-    ctx.strokeStyle = isCharging ? '#fef08a' : '#ea580c';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(-10, -8 + heave);
-    ctx.lineTo(0, 4 + heave);
-    ctx.lineTo(12, -6 + heave);
-    ctx.moveTo(0, 4 + heave);
-    ctx.lineTo(0, 14 + heave);
-    ctx.stroke();
-
-    // Visor Eyes
-    ctx.fillStyle = '#f97316';
-    ctx.fillRect(-9, -15 + heave, 6, 3);
-    ctx.fillRect(3, -15 + heave, 6, 3);
-
-    this.drawGothicHealthBar(ctx, 0, -enemy.radius - 10, 46, 5, enemy.currentHp, enemy.maxHp);
-  }
-
-  private static drawNigromante(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
-    const floatY = Math.sin(time * 4 + enemy.x) * 3.5;
-    const isCharging = enemy.aiState === 'CHARGING';
-
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
-    ctx.beginPath();
-    ctx.ellipse(0, 18, 14, 5, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Occult Void Aura
-    if (isCharging) {
-      ctx.strokeStyle = 'rgba(168, 85, 247, 0.7)';
-      ctx.lineWidth = 2;
+    // Purely Visual Elemental & Elite Status Overlays (Zero Text Clutter)
+    if (enemy.isElite) {
+      // Spiked Forged Iron-Gold Champion Crown above head
+      const cy = -enemy.radius - 15;
+      ctx.fillStyle = '#f59e0b';
+      ctx.strokeStyle = '#78350f';
+      ctx.lineWidth = 1.2;
       ctx.beginPath();
-      ctx.arc(0, floatY, 24, 0, Math.PI * 2);
+      ctx.moveTo(-8, cy);
+      ctx.lineTo(-10, cy - 8);
+      ctx.lineTo(-4, cy - 4);
+      ctx.lineTo(0, cy - 11);
+      ctx.lineTo(4, cy - 4);
+      ctx.lineTo(10, cy - 8);
+      ctx.lineTo(8, cy);
+      ctx.closePath();
+      ctx.fill();
       ctx.stroke();
     }
 
-    // Hooded Void Cloak
-    ctx.fillStyle = '#3b0764';
-    ctx.strokeStyle = '#a855f7';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(0, -18 + floatY);
-    ctx.lineTo(-15, 14 + floatY);
-    ctx.lineTo(15, 14 + floatY);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-
-    // Skull Mask & Glowing Purple Eyes
-    ctx.fillStyle = '#e2e8f0';
-    ctx.beginPath();
-    ctx.arc(0, -7 + floatY, 6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#c084fc';
-    ctx.fillRect(-3, -8 + floatY, 2, 2);
-    ctx.fillRect(1, -8 + floatY, 2, 2);
-
-    this.drawGothicHealthBar(ctx, 0, -enemy.radius - 10, 36, 4, enemy.currentHp, enemy.maxHp);
-  }
-
-  private static drawEspiritu(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
-    const floatY = Math.sin(time * 5 + enemy.x) * 4;
-    ctx.fillStyle = 'rgba(56, 189, 248, 0.22)';
-    ctx.beginPath();
-    ctx.arc(0, floatY, 22, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Ethereal Wraith Shroud
-    ctx.fillStyle = 'rgba(14, 165, 233, 0.78)';
-    ctx.strokeStyle = '#bae6fd';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(0, -18 + floatY);
-    ctx.quadraticCurveTo(16, -4 + floatY, 12, 16 + floatY);
-    ctx.lineTo(4, 10 + floatY);
-    ctx.lineTo(0, 17 + floatY);
-    ctx.lineTo(-4, 10 + floatY);
-    ctx.lineTo(-12, 16 + floatY);
-    ctx.quadraticCurveTo(-16, -4 + floatY, 0, -18 + floatY);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-
-    // Glowing Frost Eyes
-    ctx.fillStyle = '#e0f2fe';
-    ctx.fillRect(-5, -6 + floatY, 3, 3);
-    ctx.fillRect(2, -6 + floatY, 3, 3);
-
-    this.drawGothicHealthBar(ctx, 0, -enemy.radius - 10, 34, 4, enemy.currentHp, enemy.maxHp);
-  }
-
-  private static drawKamikaze(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
-    const pulse = Math.abs(Math.sin(time * 14)) * 3.5;
-    // Danger blast ring
-    ctx.strokeStyle = 'rgba(249, 115, 22, 0.55)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.arc(0, 0, 18 + pulse, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // Volatile Magma Imp Body
-    ctx.fillStyle = '#ea580c';
-    ctx.strokeStyle = '#fde047';
-    ctx.lineWidth = 1.8;
-    ctx.beginPath();
-    ctx.arc(0, 0, 14 + pulse * 0.4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-
-    // Horns & Fuse
-    ctx.fillStyle = '#7c2d12';
-    ctx.beginPath();
-    ctx.moveTo(-8, -10);
-    ctx.lineTo(-13, -18);
-    ctx.lineTo(-3, -12);
-    ctx.moveTo(8, -10);
-    ctx.lineTo(13, -18);
-    ctx.lineTo(3, -12);
-    ctx.fill();
-
-    // Crazed Yellow Eyes
-    ctx.fillStyle = '#fef08a';
-    ctx.fillRect(-5, -3, 3, 3);
-    ctx.fillRect(2, -3, 3, 3);
-
-    this.drawGothicHealthBar(ctx, 0, -enemy.radius - 10, 32, 4, enemy.currentHp, enemy.maxHp);
-  }
-
-  private static drawMimico(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
-    const isAwake = enemy.aiState !== 'IDLE';
-    const chomp = isAwake ? Math.abs(Math.sin(time * 12)) * 6 : 0;
-
-    // Chest Base
-    ctx.fillStyle = '#78350f';
-    ctx.strokeStyle = '#f59e0b';
-    ctx.lineWidth = 2;
-    ctx.fillRect(-18, -10, 36, 24);
-    ctx.strokeRect(-18, -10, 36, 24);
-
-    // Chest Lid (raises when awake to reveal fangs!)
-    ctx.fillStyle = '#92400e';
-    ctx.fillRect(-19, -18 - chomp, 38, 10);
-    ctx.strokeRect(-19, -18 - chomp, 38, 10);
-
-    if (isAwake) {
-      // Maw & Sharp Fangs
-      ctx.fillStyle = '#450a0a';
-      ctx.fillRect(-15, -9 - chomp * 0.5, 30, 8 + chomp * 0.5);
-      ctx.fillStyle = '#fef3c7';
-      for (let fx = -12; fx <= 12; fx += 6) {
+    if (enemy.burnUntil && now < enemy.burnUntil) {
+      // Animated flickering flame tongues rising around body
+      for (let i = -1; i <= 1; i++) {
+        const fx = i * (enemy.radius * 0.55);
+        const fy = Math.sin(time * 16 + i * 2) * 4;
+        ctx.fillStyle = 'rgba(249, 115, 22, 0.85)';
         ctx.beginPath();
-        ctx.moveTo(fx - 2, -8 - chomp * 0.5);
-        ctx.lineTo(fx, -2);
-        ctx.lineTo(fx + 2, -8 - chomp * 0.5);
+        ctx.moveTo(fx - 4, 4 + fy);
+        ctx.quadraticCurveTo(fx, -12 + fy, fx + 4, 4 + fy);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#fef08a';
+        ctx.beginPath();
+        ctx.arc(fx, 1 + fy, 2, 0, Math.PI * 2);
         ctx.fill();
       }
-      // Glowing Predator Eye
-      ctx.fillStyle = '#ef4444';
-      ctx.beginPath();
-      ctx.arc(0, -13 - chomp, 3.5, 0, Math.PI * 2);
-      ctx.fill();
-      this.drawGothicHealthBar(ctx, 0, -enemy.radius - 12, 42, 4, enemy.currentHp, enemy.maxHp);
-    } else {
-      // Gold Lock Clasp (looks like a tempting treasure chest!)
-      ctx.fillStyle = '#facc15';
-      ctx.fillRect(-4, -10, 8, 9);
     }
-  }
 
-  private static drawArana(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
-    const legSwing = Math.sin(time * 16 + enemy.x) * 4;
-
-    // 8 Articulated Arachnid Legs
-    ctx.strokeStyle = '#365314';
-    ctx.lineWidth = 2;
-    for (let i = -1; i <= 1; i += 2) {
-      for (let l = 0; l < 4; l++) {
-        const ly = -8 + l * 5;
+    if (enemy.poisonUntil && now < enemy.poisonUntil) {
+      // Rising toxic venom bubbles around monster
+      for (let i = 0; i < 3; i++) {
+        const bx = Math.sin(time * 4 + i * 2.1) * (enemy.radius * 0.65);
+        const by = -((time * 24 + i * 9) % (enemy.radius * 1.4)) + enemy.radius * 0.4;
+        ctx.fillStyle = 'rgba(132, 204, 22, 0.8)';
         ctx.beginPath();
-        ctx.moveTo(i * 8, ly);
-        ctx.lineTo(i * 19, ly - 4 + (l % 2 === 0 ? legSwing : -legSwing));
-        ctx.lineTo(i * 24, ly + 4);
+        ctx.arc(bx, by, 2.5 + (i % 2), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    if (enemy.chillUntil && now < enemy.chillUntil) {
+      // Translucent jagged frost crystals encasing flanks
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.55)';
+      ctx.strokeStyle = '#bae6fd';
+      ctx.lineWidth = 1;
+      for (let side = -1; side <= 1; side += 2) {
+        ctx.beginPath();
+        ctx.moveTo(side * (enemy.radius * 0.4), 6);
+        ctx.lineTo(side * (enemy.radius * 0.95), -8);
+        ctx.lineTo(side * (enemy.radius * 0.55), -14);
+        ctx.closePath();
+        ctx.fill();
         ctx.stroke();
       }
     }
 
-    // Venomous Abdomen
-    ctx.fillStyle = '#1a2e05';
-    ctx.strokeStyle = '#84cc16';
-    ctx.lineWidth = 1.5;
+    if (enemy.stunUntil && now < enemy.stunUntil) {
+      // 3 Golden 4-pointed stars orbiting head in 3D ellipse
+      for (let i = 0; i < 3; i++) {
+        const a = time * 6 + (i * Math.PI * 2) / 3;
+        const sx = Math.cos(a) * (enemy.radius * 0.75);
+        const sy = -enemy.radius - 6 + Math.sin(a) * 4;
+        ctx.fillStyle = '#fde047';
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - 4);
+        ctx.lineTo(sx + 1.5, sy - 1.5);
+        ctx.lineTo(sx + 4, sy);
+        ctx.lineTo(sx + 1.5, sy + 1.5);
+        ctx.lineTo(sx, sy + 4);
+        ctx.lineTo(sx - 1.5, sy + 1.5);
+        ctx.lineTo(sx - 4, sy);
+        ctx.lineTo(sx - 1.5, sy - 1.5);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * Articulated Stone-and-Magma Colossus (GOLEM):
+   * Stomping legs, V-tapered craggy obsidian torso plates, asymmetrical spiked boulder pauldrons,
+   * swinging stone-hammer fists, and glowing furnace visor head.
+   */
+  private static drawGolem(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
+    const isCharging = enemy.aiState === 'CHARGING';
+    const stride = Math.sin(time * 7 + enemy.x * 0.1) * 4;
+    const heave = Math.sin(time * 4.5) * 2;
+    const slamRaise = isCharging ? -10 : 0;
+
+    // Heavy ground shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.52)';
     ctx.beginPath();
-    ctx.ellipse(0, 4, 13, 15, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 24, 26, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 1. Articulated Stone Pillar Legs
+    ctx.fillStyle = '#1c1917';
+    ctx.strokeStyle = '#44403c';
+    ctx.lineWidth = 2;
+    for (let side = -1; side <= 1; side += 2) {
+      const legY = side === -1 ? stride : -stride;
+      ctx.beginPath();
+      ctx.moveTo(side * 6, 8);
+      ctx.lineTo(side * 16, 8);
+      ctx.lineTo(side * 18, 22 + legY * 0.5);
+      ctx.lineTo(side * 5, 22 + legY * 0.5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // 2. Craggy V-Tapered Basalt Torso & Segmented Waist Plate
+    ctx.fillStyle = '#292524';
+    ctx.strokeStyle = isCharging ? '#f97316' : '#57534e';
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(-22, -16 + heave);
+    ctx.lineTo(0, -22 + heave);
+    ctx.lineTo(22, -16 + heave);
+    ctx.lineTo(16, 6 + heave);
+    ctx.lineTo(10, 14 + heave);
+    ctx.lineTo(-10, 14 + heave);
+    ctx.lineTo(-16, 6 + heave);
+    ctx.closePath();
     ctx.fill();
     ctx.stroke();
 
-    // Hourglass Venom Marking & Multiple Eyes
+    // 3. Asymmetrical Spiked Boulder Pauldrons
+    ctx.fillStyle = '#1c1917';
+    for (let side = -1; side <= 1; side += 2) {
+      ctx.beginPath();
+      ctx.moveTo(side * 14, -20 + heave);
+      ctx.lineTo(side * 28, -24 + heave);
+      ctx.lineTo(side * 31, -10 + heave);
+      ctx.lineTo(side * 18, -6 + heave);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // 4. Glowing Molten Core & Magma Veins Across Chest
+    ctx.fillStyle = isCharging ? '#fef08a' : '#ea580c';
+    ctx.beginPath();
+    ctx.moveTo(0, -10 + heave);
+    ctx.lineTo(7, -2 + heave);
+    ctx.lineTo(0, 6 + heave);
+    ctx.lineTo(-7, -2 + heave);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = isCharging ? '#fde047' : '#f97316';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-14, -12 + heave);
+    ctx.lineTo(-6, -2 + heave);
+    ctx.moveTo(14, -12 + heave);
+    ctx.lineTo(6, -2 + heave);
+    ctx.moveTo(0, 6 + heave);
+    ctx.lineTo(0, 13 + heave);
+    ctx.stroke();
+
+    // 5. Sunken Iron-Grate Head & Furnace Visor
+    ctx.fillStyle = '#1c1917';
+    ctx.beginPath();
+    ctx.moveTo(-9, -26 + heave);
+    ctx.lineTo(9, -26 + heave);
+    ctx.lineTo(11, -14 + heave);
+    ctx.lineTo(-11, -14 + heave);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = isCharging ? '#fef08a' : '#f97316';
+    ctx.beginPath();
+    ctx.moveTo(-7, -21 + heave);
+    ctx.lineTo(-2, -19 + heave);
+    ctx.lineTo(-7, -18 + heave);
+    ctx.moveTo(7, -21 + heave);
+    ctx.lineTo(2, -19 + heave);
+    ctx.lineTo(7, -18 + heave);
+    ctx.fill();
+
+    // 6. Articulated Swinging Stone-Hammer Arms
+    for (let side = -1; side <= 1; side += 2) {
+      const armSwing = side === -1 ? -stride * 1.2 : stride * 1.2;
+      const fy = 4 + heave + armSwing + slamRaise;
+      ctx.strokeStyle = '#44403c';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(side * 22, -12 + heave);
+      ctx.lineTo(side * 26, fy);
+      ctx.stroke();
+
+      // Jagged Stone Fist
+      ctx.fillStyle = '#292524';
+      ctx.strokeStyle = isCharging ? '#f97316' : '#57534e';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(side * 20, fy - 6);
+      ctx.lineTo(side * 33, fy - 4);
+      ctx.lineTo(side * 32, fy + 9);
+      ctx.lineTo(side * 19, fy + 8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    this.drawGothicHealthBar(ctx, 0, -enemy.radius - 8, 46, 5, enemy.currentHp, enemy.maxHp);
+  }
+
+  /**
+   * Abyssal Lich Cultist (NIGROMANTE):
+   * Tattered multi-layered void vestments, horned bone skull mask,
+   * skeletal hand clutching a levitating grimoire, and a goat-skull staff channeling a dark vortex.
+   */
+  private static drawNigromante(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
+    const floatY = Math.sin(time * 4 + enemy.x) * 3.5;
+    const isCharging = enemy.aiState === 'CHARGING';
+    const hemWave = Math.sin(time * 8 + enemy.y) * 3;
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
+    ctx.beginPath();
+    ctx.ellipse(0, 19, 15, 5.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Occult Void Hexagram Aura when charging
+    if (isCharging) {
+      ctx.save();
+      ctx.translate(0, floatY);
+      ctx.rotate(time * 3);
+      ctx.strokeStyle = 'rgba(192, 132, 252, 0.75)';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = (i * Math.PI) / 3;
+        const r = 24;
+        if (i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+        else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      ctx.closePath();
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 1. Tattered Multi-Layered Void Robes with scalloped hem
+    ctx.fillStyle = '#2e1065';
+    ctx.strokeStyle = '#7e22ce';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-8, -14 + floatY);
+    ctx.quadraticCurveTo(-18, 2 + floatY, -16 + hemWave, 16 + floatY);
+    ctx.lineTo(-8, 12 + floatY);
+    ctx.lineTo(0, 17 + floatY);
+    ctx.lineTo(8, 12 + floatY);
+    ctx.lineTo(16 + hemWave, 16 + floatY);
+    ctx.quadraticCurveTo(18, 2 + floatY, 8, -14 + floatY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Crimson & Gold Occult Stole
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-5, -8 + floatY);
+    ctx.lineTo(-6, 12 + floatY);
+    ctx.moveTo(5, -8 + floatY);
+    ctx.lineTo(6, 12 + floatY);
+    ctx.stroke();
+
+    // 2. Pointed Arch-Cowl & Horned Bone Skull Mask
+    ctx.fillStyle = '#1e1b4b';
+    ctx.beginPath();
+    ctx.moveTo(0, -24 + floatY);
+    ctx.quadraticCurveTo(12, -16 + floatY, 10, -4 + floatY);
+    ctx.lineTo(-10, -4 + floatY);
+    ctx.quadraticCurveTo(-12, -16 + floatY, 0, -24 + floatY);
+    ctx.fill();
+
+    // Curved Ram Horns on Cowl
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-6, -15 + floatY);
+    ctx.quadraticCurveTo(-15, -20 + floatY, -13, -10 + floatY);
+    ctx.moveTo(6, -15 + floatY);
+    ctx.quadraticCurveTo(15, -20 + floatY, 13, -10 + floatY);
+    ctx.stroke();
+
+    // Carved Bone Visage & Jaw
+    ctx.fillStyle = '#e2e8f0';
+    ctx.beginPath();
+    ctx.moveTo(-5, -14 + floatY);
+    ctx.lineTo(5, -14 + floatY);
+    ctx.lineTo(4, -6 + floatY);
+    ctx.lineTo(0, -4 + floatY);
+    ctx.lineTo(-4, -6 + floatY);
+    ctx.closePath();
+    ctx.fill();
+
+    // Glowing Amethyst Eyes
+    ctx.fillStyle = isCharging ? '#f0abfc' : '#a855f7';
+    ctx.beginPath();
+    ctx.arc(-2.2, -10 + floatY, 1.6, 0, Math.PI * 2);
+    ctx.arc(2.2, -10 + floatY, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 3. Right Hand: Twisted Bone Staff with Horned Skull & Void Orb
+    const staffY = floatY + Math.sin(time * 6) * 2;
+    ctx.strokeStyle = '#78350f';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(14, 14 + staffY);
+    ctx.lineTo(17, -16 + staffY);
+    ctx.stroke();
+
+    ctx.fillStyle = '#c084fc';
+    ctx.beginPath();
+    ctx.arc(17, -19 + staffY, isCharging ? 5 : 3.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 4. Left Hand: Levitating Open Necronomicon Pages
+    const bookY = floatY - 4 + Math.cos(time * 5) * 2.5;
+    ctx.fillStyle = '#450a0a';
+    ctx.beginPath();
+    ctx.moveTo(-19, bookY - 4);
+    ctx.lineTo(-11, bookY - 2);
+    ctx.lineTo(-11, bookY + 5);
+    ctx.lineTo(-19, bookY + 3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#fef3c7';
+    ctx.beginPath();
+    ctx.moveTo(-18, bookY - 3);
+    ctx.lineTo(-12, bookY - 1);
+    ctx.lineTo(-12, bookY + 4);
+    ctx.lineTo(-18, bookY + 2);
+    ctx.closePath();
+    ctx.fill();
+
+    this.drawGothicHealthBar(ctx, 0, -enemy.radius - 8, 36, 4, enemy.currentHp, enemy.maxHp);
+  }
+
+  /**
+   * Banshee Frost Wraith (ESPIRITU):
+   * Exposed spectral ribcage, tattered ectoplasmic ribbons, hooded skull, and elongated ice-clawed arms.
+   */
+  private static drawEspiritu(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
+    const floatY = Math.sin(time * 5 + enemy.x) * 4;
+    const isCharging = enemy.aiState === 'CHARGING';
+    const sway = Math.sin(time * 9 + enemy.y * 0.1) * 4;
+
+    // Chilling frost mist halo
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.18)';
+    ctx.beginPath();
+    ctx.arc(0, floatY, 22, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 1. Flowing Ectoplasmic Shroud with 4 undulating tail ribbons
+    ctx.fillStyle = 'rgba(14, 165, 233, 0.72)';
+    ctx.strokeStyle = '#bae6fd';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(0, -20 + floatY);
+    ctx.quadraticCurveTo(15, -8 + floatY, 14 + sway * 0.4, 16 + floatY);
+    ctx.lineTo(7 + sway * 0.6, 9 + floatY);
+    ctx.lineTo(2 + sway, 19 + floatY);
+    ctx.lineTo(-3 + sway * 0.5, 10 + floatY);
+    ctx.lineTo(-9 + sway, 18 + floatY);
+    ctx.lineTo(-14 + sway * 0.4, 14 + floatY);
+    ctx.quadraticCurveTo(-15, -8 + floatY, 0, -20 + floatY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // 2. Translucent Spectral Ribcage Inside Shroud
+    ctx.strokeStyle = 'rgba(224, 242, 254, 0.75)';
+    ctx.lineWidth = 1.3;
+    for (let r = -4; r <= 4; r += 4) {
+      ctx.beginPath();
+      ctx.moveTo(-6, r + floatY);
+      ctx.quadraticCurveTo(0, r + 2 + floatY, 6, r + floatY);
+      ctx.stroke();
+    }
+
+    // 3. Spectral Skull & Screaming Maw
+    ctx.fillStyle = '#e0f2fe';
+    ctx.beginPath();
+    ctx.arc(0, -10 + floatY, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#082f49';
+    ctx.beginPath();
+    ctx.arc(-2.2, -11 + floatY, 1.6, 0, Math.PI * 2);
+    ctx.arc(2.2, -11 + floatY, 1.6, 0, Math.PI * 2);
+    ctx.ellipse(0, -7 + floatY, 2, isCharging ? 3 : 1.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 4. Reaching Spectral Arms & Razor Ice Claws
+    const reach = isCharging ? 5 : 0;
+    ctx.strokeStyle = '#7dd3fc';
+    ctx.lineWidth = 2;
+    for (let side = -1; side <= 1; side += 2) {
+      ctx.beginPath();
+      ctx.moveTo(side * 8, -4 + floatY);
+      ctx.lineTo(side * 18, -2 + floatY - reach);
+      ctx.lineTo(side * 22, -7 + floatY - reach);
+      ctx.stroke();
+    }
+
+    this.drawGothicHealthBar(ctx, 0, -enemy.radius - 8, 34, 4, enemy.currentHp, enemy.maxHp);
+  }
+
+  /**
+   * Volatile Alchemical Sapper Imp (KAMIKAZE):
+   * Hunched magma goblin sprinting on digitigrade legs, carrying a strapped iron-bound powder keg
+   * on its back with a sizzling fuse and waving a lit torch!
+   */
+  private static drawKamikaze(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
+    const legRun = Math.sin(time * 22 + enemy.x) * 6;
+    const bounce = Math.abs(Math.cos(time * 22)) * 2.5;
+    const pulse = Math.abs(Math.sin(time * 15)) * 3;
+
+    // Ground shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.beginPath();
+    ctx.ellipse(0, 15, 13, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 1. Sprinting Digitigrade Imp Legs
+    ctx.strokeStyle = '#9a3412';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(-5, 6 - bounce);
+    ctx.lineTo(-8, 14 + legRun * 0.6);
+    ctx.moveTo(5, 6 - bounce);
+    ctx.lineTo(8, 14 - legRun * 0.6);
+    ctx.stroke();
+
+    // 2. Strapped Alchemical Powder Keg on Back (swelling with magma heat!)
+    ctx.save();
+    ctx.translate(-3, -6 - bounce);
+    ctx.rotate(-0.25);
+    ctx.fillStyle = '#451a03';
+    ctx.strokeStyle = '#ea580c';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 10 + pulse * 0.3, 12 + pulse * 0.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Iron barrel hoops
+    ctx.strokeStyle = '#292524';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-9, -4);
+    ctx.lineTo(9, -4);
+    ctx.moveTo(-9, 4);
+    ctx.lineTo(9, 4);
+    ctx.stroke();
+
+    // Sizzling Fuse & Bright Sparks at top of keg
+    ctx.strokeStyle = '#d6d3d1';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, -12);
+    ctx.quadraticCurveTo(6, -18, 10, -15);
+    ctx.stroke();
+
+    ctx.fillStyle = '#fef08a';
+    for (let s = 0; s < 4; s++) {
+      const sa = time * 18 + (s * Math.PI) / 2;
+      ctx.beginPath();
+      ctx.arc(10 + Math.cos(sa) * 3.5, -15 + Math.sin(sa) * 3.5, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // 3. Hunched Imp Torso & Pointed Bat-Eared Head
+    ctx.fillStyle = '#c2410c';
+    ctx.strokeStyle = '#7c2d12';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(4, 1 - bounce, 9, 8, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Imp Head with Long Jagged Ears & Curved Horns
+    ctx.fillStyle = '#ea580c';
+    ctx.beginPath();
+    ctx.arc(7, -5 - bounce, 6.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Long Bat Ears & Dark Horns
+    ctx.fillStyle = '#9a3412';
+    ctx.beginPath();
+    ctx.moveTo(2, -8 - bounce);
+    ctx.lineTo(-6, -14 - bounce);
+    ctx.lineTo(4, -4 - bounce);
+    ctx.moveTo(10, -8 - bounce);
+    ctx.lineTo(17, -14 - bounce);
+    ctx.lineTo(11, -4 - bounce);
+    ctx.fill();
+
+    // Manic Glowing Eyes & Fanged Grin
+    ctx.fillStyle = '#fef08a';
+    ctx.beginPath();
+    ctx.arc(5, -6 - bounce, 1.7, 0, Math.PI * 2);
+    ctx.arc(9.5, -6 - bounce, 1.7, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 4. Right Arm Waving a Blazing Torch
+    ctx.strokeStyle = '#78350f';
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(11, 0 - bounce);
+    ctx.lineTo(18, -8 - bounce + legRun * 0.4);
+    ctx.stroke();
+    ctx.fillStyle = '#facc15';
+    ctx.beginPath();
+    ctx.arc(18, -11 - bounce + legRun * 0.4, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    this.drawGothicHealthBar(ctx, 0, -enemy.radius - 10, 32, 4, enemy.currentHp, enemy.maxHp);
+  }
+
+  /**
+   * Ravenous Disguised Chest Monster (MIMICO):
+   * Ornate oak-and-iron chest when dormant; erupts with 4 scuttling spider-legs,
+   * hinged snapping lid, rows of ivory fangs, and a whipping sinuous tongue when awake!
+   */
+  private static drawMimico(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
+    const isAwake = enemy.aiState !== 'IDLE';
+    const chomp = isAwake ? Math.abs(Math.sin(time * 13)) * 8 : 0;
+    const legScuttle = isAwake ? Math.sin(time * 20 + enemy.x) * 4.5 : 0;
+
+    // Shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.48)';
+    ctx.beginPath();
+    ctx.ellipse(0, 15, 22, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 1. 4 Clawed Spider-Wood Legs (erupt underneath when awake!)
+    if (isAwake) {
+      ctx.strokeStyle = '#451a03';
+      ctx.lineWidth = 2.8;
+      for (let side = -1; side <= 1; side += 2) {
+        for (let l = 0; l < 2; l++) {
+          const swing = (l === 0 ? legScuttle : -legScuttle) * side;
+          ctx.beginPath();
+          ctx.moveTo(side * (10 + l * 6), 8);
+          ctx.lineTo(side * (20 + l * 6), 4 + swing * 0.5);
+          ctx.lineTo(side * (24 + l * 6), 16 + swing);
+          ctx.stroke();
+        }
+      }
+    }
+
+    // 2. Lower Carved Oak Chest Box with Wrought Iron Straps
+    ctx.fillStyle = '#451a03';
+    ctx.strokeStyle = '#292524';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-20, -4);
+    ctx.lineTo(20, -4);
+    ctx.lineTo(18, 12);
+    ctx.lineTo(-18, 12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Iron Straps on Lower Box
+    ctx.fillStyle = '#292524';
+    ctx.fillRect(-15, -4, 5, 16);
+    ctx.fillRect(10, -4, 5, 16);
+
+    if (isAwake) {
+      // 3. Fleshy Abyssal Maw, Whipping Tongue & Rows of Jagged Fangs
+      ctx.fillStyle = '#450a0a';
+      ctx.beginPath();
+      ctx.moveTo(-18, -4);
+      ctx.lineTo(-19, -12 - chomp);
+      ctx.lineTo(19, -12 - chomp);
+      ctx.lineTo(18, -4);
+      ctx.closePath();
+      ctx.fill();
+
+      // Sinuous Whipping Purple Tongue
+      const tongueWave = Math.sin(time * 16) * 9;
+      ctx.strokeStyle = '#be185d';
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(0, -4);
+      ctx.quadraticCurveTo(tongueWave, -12 - chomp * 0.5, tongueWave * 1.4, -2 + chomp * 0.4);
+      ctx.stroke();
+
+      // Upper & Lower Jagged Ivory Teeth
+      ctx.fillStyle = '#fef3c7';
+      for (let tx = -14; tx <= 14; tx += 7) {
+        // Upper fangs pointing down
+        ctx.beginPath();
+        ctx.moveTo(tx - 2.5, -11 - chomp);
+        ctx.lineTo(tx, -5 - chomp * 0.5);
+        ctx.lineTo(tx + 2.5, -11 - chomp);
+        ctx.fill();
+        // Lower fangs pointing up
+        ctx.beginPath();
+        ctx.moveTo(tx - 2, -3);
+        ctx.lineTo(tx + 1, -9 - chomp * 0.2);
+        ctx.lineTo(tx + 3, -3);
+        ctx.fill();
+      }
+    }
+
+    // 4. Hinged Arched Oak Lid
+    ctx.save();
+    ctx.translate(0, -4 - chomp);
+    ctx.fillStyle = '#78350f';
+    ctx.strokeStyle = '#292524';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-21, 0);
+    ctx.quadraticCurveTo(-21, -13, 0, -13);
+    ctx.quadraticCurveTo(21, -13, 21, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Iron bands on lid
+    ctx.fillStyle = '#292524';
+    ctx.fillRect(-15, -11, 5, 11);
+    ctx.fillRect(10, -11, 5, 11);
+
+    if (isAwake) {
+      // 3 Glowing Predator Eyes on the Lid
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.arc(-7, -6, 2.2, 0, Math.PI * 2);
+      ctx.arc(0, -8, 2.8, 0, Math.PI * 2);
+      ctx.arc(7, -6, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Dormant Ornate Gold Lock Clasp
+      ctx.fillStyle = '#d97706';
+      ctx.beginPath();
+      ctx.arc(0, 1, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    if (isAwake) {
+      this.drawGothicHealthBar(ctx, 0, -enemy.radius - 12, 42, 4, enemy.currentHp, enemy.maxHp);
+    }
+  }
+
+  /**
+   * Abyssal Venom Weaver (ARANA):
+   * 8 multi-segmented chitinous legs with claw tips, segmented bulbous abdomen with glowing venom sacs,
+   * armored cephalothorax, and animated pinching chelicerae.
+   */
+  private static drawArana(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
+    const legSwing = Math.sin(time * 16 + enemy.x) * 4.5;
+    const mandiblePinch = Math.abs(Math.sin(time * 10)) * 2.5;
+
+    // 1. 8 Multi-Segmented Chitinous Legs (Femur -> Tibia -> Tarsus Claw)
+    ctx.lineCap = 'round';
+    for (let side = -1; side <= 1; side += 2) {
+      for (let l = 0; l < 4; l++) {
+        const phase = (l % 2 === 0 ? legSwing : -legSwing) * side;
+        const baseX = side * 7;
+        const baseY = -6 + l * 4;
+        const kneeX = side * (17 + (l === 1 || l === 2 ? 3 : 0));
+        const kneeY = baseY - 6 + phase * 0.6;
+        const tipX = side * (24 + (l === 1 || l === 2 ? 3 : 0));
+        const tipY = baseY + 5 + phase;
+
+        ctx.strokeStyle = '#365314';
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        ctx.moveTo(baseX, baseY);
+        ctx.lineTo(kneeX, kneeY);
+        ctx.stroke();
+
+        ctx.strokeStyle = '#65a30d';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(kneeX, kneeY);
+        ctx.lineTo(tipX, tipY);
+        ctx.stroke();
+      }
+    }
+
+    // 2. Segmented Bulbous Abdomen with Bioluminescent Venom Sacs
+    ctx.fillStyle = '#1a2e05';
+    ctx.strokeStyle = '#4d7c0f';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.ellipse(0, 6, 12, 14, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Glowing Acid Sacs on Abdomen
     ctx.fillStyle = '#84cc16';
-    ctx.fillRect(-3, 2, 6, 6);
+    ctx.beginPath();
+    ctx.arc(-4, 4, 2.5, 0, Math.PI * 2);
+    ctx.arc(4, 4, 2.5, 0, Math.PI * 2);
+    ctx.arc(0, 10, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 3. Armored Cephalothorax & Pinching Chelicerae (Mandibles)
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    ctx.ellipse(0, -6, 8, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Curved Venomous Mandibles
+    ctx.strokeStyle = '#a3e635';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-4, -11);
+    ctx.quadraticCurveTo(-8, -17, -2 + mandiblePinch * 0.5, -17);
+    ctx.moveTo(4, -11);
+    ctx.quadraticCurveTo(8, -17, 2 - mandiblePinch * 0.5, -17);
+    ctx.stroke();
+
+    // Cluster of 6 Gleaming Crimson Eyes
     ctx.fillStyle = '#ef4444';
-    ctx.fillRect(-5, -10, 2.5, 2.5);
-    ctx.fillRect(2.5, -10, 2.5, 2.5);
-    ctx.fillRect(-2, -12, 4, 2);
+    for (let ex = -4; ex <= 4; ex += 4) {
+      ctx.beginPath();
+      ctx.arc(ex, -9, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     this.drawGothicHealthBar(ctx, 0, -enemy.radius - 10, 36, 4, enemy.currentHp, enemy.maxHp);
   }
 
+  /**
+   * Seraphic Ophanim Arcane Sentinel (CENTINELA):
+   * 4 beating metallic-and-bone wings, interlocking brass gimbal rings studded with runes,
+   * and an organic veined dragon-eye that tracks its target.
+   */
   private static drawCentinela(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
-    const rot = time * 2.2;
+    const wingBeat = Math.sin(time * 9 + enemy.x) * 5;
+    const isCharging = enemy.aiState === 'CHARGING';
 
-    // Outer Floating Runic Brass Ring
-    ctx.save();
-    ctx.rotate(rot);
+    // 1. 4 Articulated Seraphic Feathered Wings (Upper & Lower Pairs)
+    ctx.fillStyle = '#4c1d95';
     ctx.strokeStyle = '#c084fc';
+    ctx.lineWidth = 1.4;
+    for (let side = -1; side <= 1; side += 2) {
+      // Upper wing
+      ctx.beginPath();
+      ctx.moveTo(side * 10, -4);
+      ctx.quadraticCurveTo(side * 26, -18 + wingBeat, side * 28, -4 + wingBeat);
+      ctx.lineTo(side * 18, 2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Lower wing
+      ctx.beginPath();
+      ctx.moveTo(side * 8, 4);
+      ctx.quadraticCurveTo(side * 22, 16 - wingBeat * 0.7, side * 24, 6 - wingBeat * 0.7);
+      ctx.lineTo(side * 14, 8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // 2. Interlocking Gyroscope Brass Gimbal Rings (Tilted Ellipses)
+    ctx.save();
+    ctx.rotate(time * 2.4);
+    ctx.strokeStyle = '#d97706';
     ctx.lineWidth = 2.2;
-    ctx.setLineDash([8, 5]);
     ctx.beginPath();
-    ctx.arc(0, 0, 20, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, 19, 11, 0, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
 
-    // Arcane All-Seeing Eye Core
-    ctx.fillStyle = '#3b0764';
+    ctx.save();
+    ctx.rotate(-time * 1.8 + Math.PI / 3);
     ctx.strokeStyle = '#e879f9';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 18, 10, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // 3. Central Armored Ocular Core & Veined Sclera
+    ctx.fillStyle = '#2e1065';
+    ctx.strokeStyle = '#a855f7';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(0, 0, 14, 0, Math.PI * 2);
+    ctx.arc(0, 0, 12, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
 
-    // Glowing Sclera & Pupil
     ctx.fillStyle = '#fdf4ff';
     ctx.beginPath();
-    ctx.ellipse(0, 0, 10, 6.5, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, 9.5, 7, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = '#a21caf';
+    // Slit Dragon Iris tracking aimAngle
+    const lookX = typeof enemy.aimAngle === 'number' ? Math.cos(enemy.aimAngle) * 2.5 : 0;
+    const lookY = typeof enemy.aimAngle === 'number' ? Math.sin(enemy.aimAngle) * 2 : 0;
+    ctx.fillStyle = isCharging ? '#ef4444' : '#a21caf';
     ctx.beginPath();
-    ctx.arc(0, 0, 4.5, 0, Math.PI * 2);
+    ctx.arc(lookX, lookY, 4.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#09090b';
+    ctx.beginPath();
+    ctx.ellipse(lookX, lookY, 1.3, 3.6, 0, 0, Math.PI * 2);
     ctx.fill();
 
     this.drawGothicHealthBar(ctx, 0, -enemy.radius - 10, 38, 4, enemy.currentHp, enemy.maxHp);
   }
 
+  /**
+   * BOSS 1: Ignis-Vulcan, Coloso de Magma y Cadenas (BOSS_TITAN)
+   * Multi-jointed Obsidian Demon Colossus with unfurling magma wings in Phase 2/3,
+   * exposed ribcage over a churning volcanic core, articulated arms with swinging magma gauntlets
+   * and iron chains, horned demon skull with roaring hinged jaw, and Runic Shield Dome when shielded.
+   */
   private static drawBossTitan(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
-    const isPhase2 = (enemy.bossPhase || 1) >= 2;
+    const phase = enemy.bossPhase || 1;
     const pulse = Math.sin(time * 5) * 4;
+    const armSwing = Math.sin(time * 6) * 8;
+    const jawRoar = enemy.aiState === 'ATTACKING' || enemy.aiState === 'CHARGING' ? 6 + Math.sin(time * 18) * 3 : 2;
 
-    // Volcanic Aura Circle
-    ctx.fillStyle = isPhase2 ? 'rgba(220, 38, 38, 0.24)' : 'rgba(234, 88, 12, 0.18)';
+    // Ground shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.58)';
     ctx.beginPath();
-    ctx.arc(0, 0, enemy.radius + 16 + pulse, 0, Math.PI * 2);
+    ctx.ellipse(0, 48, 52, 18, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Colossal Obsidian & Magma Armor
-    ctx.fillStyle = '#1c1917';
-    ctx.strokeStyle = isPhase2 ? '#ef4444' : '#f97316';
-    ctx.lineWidth = 4;
+    // Volcanic Floor Crater Aura
+    ctx.fillStyle = phase >= 2 ? 'rgba(220, 38, 38, 0.24)' : 'rgba(234, 88, 12, 0.18)';
     ctx.beginPath();
-    ctx.roundRect(-42, -40, 84, 80, [14]);
-    ctx.fill();
-    ctx.stroke();
-
-    // Molten Furnace Core in Chest
-    ctx.fillStyle = '#f97316';
-    ctx.beginPath();
-    ctx.arc(0, 4, 18 + pulse * 0.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#fef08a';
-    ctx.beginPath();
-    ctx.arc(0, 4, 9, 0, Math.PI * 2);
+    ctx.arc(0, 0, enemy.radius + 14 + pulse, 0, Math.PI * 2);
     ctx.fill();
 
-    // Crowned Horn Visor
-    ctx.fillStyle = '#fde047';
-    ctx.fillRect(-16, -24, 10, 5);
-    ctx.fillRect(6, -24, 10, 5);
-
-    this.drawGothicHealthBar(ctx, 0, -enemy.radius - 18, 92, 8, enemy.currentHp, enemy.maxHp);
-    ctx.fillStyle = '#fdba74';
-    ctx.font = 'bold 12px "Cinzel", serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(enemy.name, 0, -enemy.radius - 28);
-  }
-
-  private static drawBossArachnid(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
-    const isPhase2 = (enemy.bossPhase || 1) >= 2;
-    const legWave = Math.sin(time * 10) * 6;
-
-    // 8 Giant Scythe Legs
-    ctx.strokeStyle = isPhase2 ? '#a3e635' : '#65a30d';
-    ctx.lineWidth = 3.5;
-    for (let side = -1; side <= 1; side += 2) {
-      for (let i = 0; i < 4; i++) {
-        const yOff = -22 + i * 14;
+    // 1. Phase 2 & 3: Colossal Jagged Obsidian-and-Magma Wings
+    if (phase >= 2) {
+      const wingFlap = Math.sin(time * 4.5) * 9;
+      ctx.fillStyle = '#1c1917';
+      ctx.strokeStyle = phase === 3 ? '#fef08a' : '#f97316';
+      ctx.lineWidth = 2.5;
+      for (let side = -1; side <= 1; side += 2) {
         ctx.beginPath();
-        ctx.moveTo(side * 26, yOff);
-        ctx.lineTo(side * 54, yOff - 10 + (i % 2 === 0 ? legWave : -legWave));
-        ctx.lineTo(side * 66, yOff + 10);
+        ctx.moveTo(side * 18, -14);
+        ctx.lineTo(side * 68, -48 + wingFlap);
+        ctx.lineTo(side * 82, -16 + wingFlap * 0.6);
+        ctx.lineTo(side * 58, -4);
+        ctx.lineTo(side * 66, 18);
+        ctx.lineTo(side * 24, 12);
+        ctx.closePath();
+        ctx.fill();
         ctx.stroke();
       }
     }
 
-    // Queen Carapace
-    ctx.fillStyle = '#1a2e05';
-    ctx.strokeStyle = '#84cc16';
-    ctx.lineWidth = 3.5;
+    // 2. Massive V-Shaped Obsidian Torso & Exposed Ribcage over Molten Furnace Core
+    ctx.fillStyle = '#1c1917';
+    ctx.strokeStyle = phase >= 2 ? '#ef4444' : '#f97316';
+    ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.ellipse(0, 6, 36, 42, 0, 0, Math.PI * 2);
+    ctx.moveTo(-36, -24);
+    ctx.lineTo(0, -32);
+    ctx.lineTo(36, -24);
+    ctx.lineTo(28, 14);
+    ctx.lineTo(18, 34);
+    ctx.lineTo(-18, 34);
+    ctx.lineTo(-28, 14);
+    ctx.closePath();
     ctx.fill();
     ctx.stroke();
 
-    // Cluster of 6 Glowing Emerald/Crimson Eyes
-    ctx.fillStyle = isPhase2 ? '#ef4444' : '#a3e635';
-    for (let ex = -12; ex <= 12; ex += 8) {
+    // Churning Magma Heart Core
+    ctx.fillStyle = '#ea580c';
+    ctx.beginPath();
+    ctx.arc(0, 2, 18 + pulse * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fef08a';
+    ctx.beginPath();
+    ctx.arc(0, 2, 9, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Obsidian Ribcage Bars curving over the Molten Core
+    ctx.strokeStyle = '#292524';
+    ctx.lineWidth = 3.5;
+    for (let ry = -8; ry <= 12; ry += 10) {
       ctx.beginPath();
-      ctx.arc(ex, -22, 3.5, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.moveTo(-20, ry);
+      ctx.quadraticCurveTo(0, ry + 5, 20, ry);
+      ctx.stroke();
     }
 
-    this.drawGothicHealthBar(ctx, 0, -enemy.radius - 18, 92, 8, enemy.currentHp, enemy.maxHp);
-    ctx.fillStyle = '#bef264';
-    ctx.font = 'bold 12px "Cinzel", serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(enemy.name, 0, -enemy.radius - 28);
+    // 3. Spiked Volcanic Pauldrons
+    ctx.fillStyle = '#292524';
+    ctx.strokeStyle = '#f97316';
+    ctx.lineWidth = 2.2;
+    for (let side = -1; side <= 1; side += 2) {
+      ctx.beginPath();
+      ctx.moveTo(side * 24, -28);
+      ctx.lineTo(side * 48, -36);
+      ctx.lineTo(side * 54, -14);
+      ctx.lineTo(side * 30, -8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // 4. Articulated Multi-Jointed Arms, Colossal Clawed Magma Gauntlets & Swinging Iron Chains
+    for (let side = -1; side <= 1; side += 2) {
+      const gy = 10 + (side === -1 ? armSwing : -armSwing);
+      const gx = side * 48;
+
+      // Upper Arm & Bracer
+      ctx.strokeStyle = '#44403c';
+      ctx.lineWidth = 7;
+      ctx.beginPath();
+      ctx.moveTo(side * 36, -16);
+      ctx.lineTo(gx, gy);
+      ctx.stroke();
+
+      // Clawed Obsidian Gauntlet
+      ctx.fillStyle = '#1c1917';
+      ctx.strokeStyle = '#f97316';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(gx - side * 10, gy - 10);
+      ctx.lineTo(gx + side * 12, gy - 8);
+      ctx.lineTo(gx + side * 14, gy + 12);
+      ctx.lineTo(gx, gy + 18);
+      ctx.lineTo(gx - side * 10, gy + 10);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Hanging Iron Chain Links from Gauntlet
+      ctx.strokeStyle = '#78716c';
+      ctx.lineWidth = 2;
+      for (let link = 1; link <= 4; link++) {
+        ctx.beginPath();
+        ctx.ellipse(
+          gx + Math.sin(time * 7 + link) * 3,
+          gy + 16 + link * 7,
+          3,
+          4.5,
+          0,
+          0,
+          Math.PI * 2
+        );
+        ctx.stroke();
+      }
+    }
+
+    // 5. Horned Demon Skull & Hinged Roaring Jaw
+    ctx.fillStyle = '#1c1917';
+    ctx.strokeStyle = '#ea580c';
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(-16, -38);
+    ctx.lineTo(16, -38);
+    ctx.lineTo(14, -20);
+    ctx.lineTo(-14, -20);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Swept-back Great Demon Horns
+    ctx.fillStyle = '#44403c';
+    ctx.beginPath();
+    ctx.moveTo(-14, -34);
+    ctx.quadraticCurveTo(-36, -46, -28, -58);
+    ctx.lineTo(-8, -38);
+    ctx.moveTo(14, -34);
+    ctx.quadraticCurveTo(36, -46, 28, -58);
+    ctx.lineTo(8, -38);
+    ctx.fill();
+
+    // Hinged Lower Jaw with Molten Roar
+    ctx.fillStyle = '#292524';
+    ctx.beginPath();
+    ctx.moveTo(-11, -20);
+    ctx.lineTo(11, -20);
+    ctx.lineTo(8, -12 + jawRoar);
+    ctx.lineTo(-8, -12 + jawRoar);
+    ctx.closePath();
+    ctx.fill();
+
+    // Blazing Visor Eyes
+    ctx.fillStyle = '#fef08a';
+    ctx.beginPath();
+    ctx.moveTo(-10, -30);
+    ctx.lineTo(-3, -27);
+    ctx.lineTo(-10, -25);
+    ctx.moveTo(10, -30);
+    ctx.lineTo(3, -27);
+    ctx.lineTo(10, -25);
+    ctx.fill();
+
+    // 6. Active Immunity Carapace Shield Dome
+    if (enemy.bossShieldActive) {
+      this.drawBossImmunityShield(ctx, enemy.radius + 18, time, '#38bdf8');
+    }
+
+    this.drawGothicHealthBar(ctx, 0, -enemy.radius - 20, 108, 8, enemy.currentHp, enemy.maxHp);
   }
 
   /**
-   * Renders Pickups: Ruby Hearts, Golden Coins, Shield Orbs, and Frenzy Orbs!
+   * BOSS 2: Aracne-Nyx, Reina Tejedora del Vórtice (BOSS_ARACHNID)
+   * 8 multi-segmented scythe legs with IK stepping wave, segmented abdomen with pulsing bioluminescent
+   * venom glands and scorpion tail stinger, plus a crowned Arachnid Empress torso with raptorial scythe-arms.
+   */
+  private static drawBossArachnid(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
+    const phase = enemy.bossPhase || 1;
+    const legWave = Math.sin(time * 11) * 7;
+
+    // Ground shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.beginPath();
+    ctx.ellipse(0, 44, 54, 20, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 1. 8 Multi-Jointed Chitinous Scythe Legs (Coxa -> Spined Femur -> Curved Tibia -> Razor Claw)
+    ctx.lineCap = 'round';
+    for (let side = -1; side <= 1; side += 2) {
+      for (let i = 0; i < 4; i++) {
+        const wave = (i % 2 === 0 ? legWave : -legWave) * side;
+        const yBase = -16 + i * 12;
+        const kneeX = side * (46 + (i === 1 || i === 2 ? 8 : 0));
+        const kneeY = yBase - 14 + wave * 0.7;
+        const footX = side * (68 + (i === 1 || i === 2 ? 8 : 0));
+        const footY = yBase + 12 + wave;
+
+        // Armored Femur
+        ctx.strokeStyle = '#365314';
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(side * 22, yBase);
+        ctx.lineTo(kneeX, kneeY);
+        ctx.stroke();
+
+        // Razor Tibia & Tarsus Scythe
+        ctx.strokeStyle = phase >= 2 ? '#a3e635' : '#65a30d';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(kneeX, kneeY);
+        ctx.lineTo(footX, footY);
+        ctx.stroke();
+      }
+    }
+
+    // 2. Segmented Chitinous Abdomen with Pulsing Bioluminescent Venom Glands
+    ctx.fillStyle = '#1a2e05';
+    ctx.strokeStyle = '#84cc16';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(0, 16, 32, 36, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Chitin plate ribs on abdomen
+    ctx.strokeStyle = '#365314';
+    ctx.lineWidth = 2;
+    for (let ay = 2; ay <= 32; ay += 10) {
+      ctx.beginPath();
+      ctx.moveTo(-24, ay);
+      ctx.quadraticCurveTo(0, ay + 6, 24, ay);
+      ctx.stroke();
+    }
+
+    // Pulsing Bioluminescent Venom Sacs
+    const sacPulse = 1 + Math.sin(time * 8) * 0.2;
+    ctx.fillStyle = phase >= 2 ? '#bef264' : '#84cc16';
+    for (let sy = 6; sy <= 26; sy += 10) {
+      ctx.beginPath();
+      ctx.arc(-12, sy, 4 * sacPulse, 0, Math.PI * 2);
+      ctx.arc(12, sy, 4 * sacPulse, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 3. Crowned Arachnid Matriarch Upper Torso & Raptorial Mantis Fore-Scythes
+    ctx.fillStyle = '#0f172a';
+    ctx.strokeStyle = '#65a30d';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(-18, -8);
+    ctx.lineTo(0, -24);
+    ctx.lineTo(18, -8);
+    ctx.lineTo(12, 8);
+    ctx.lineTo(-12, 8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Raptorial Mantis Fore-Scythes & Snapping Chelicerae
+    const pinch = Math.sin(time * 12) * 5;
+    ctx.strokeStyle = '#bef264';
+    ctx.lineWidth = 3;
+    for (let side = -1; side <= 1; side += 2) {
+      ctx.beginPath();
+      ctx.moveTo(side * 14, -18);
+      ctx.quadraticCurveTo(side * 30, -34, side * 12 - side * pinch * 0.5, -42);
+      ctx.stroke();
+    }
+
+    // Matriarch Chitin Crown & 8 Glowing Eyes
+    ctx.fillStyle = '#365314';
+    ctx.beginPath();
+    ctx.moveTo(-14, -24);
+    ctx.lineTo(-18, -40);
+    ctx.lineTo(-7, -30);
+    ctx.lineTo(0, -44);
+    ctx.lineTo(7, -30);
+    ctx.lineTo(18, -40);
+    ctx.lineTo(14, -24);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = phase >= 2 ? '#ef4444' : '#a3e635';
+    for (let ex = -9; ex <= 9; ex += 6) {
+      ctx.beginPath();
+      ctx.arc(ex, -22, 2.5, 0, Math.PI * 2);
+      ctx.arc(ex * 0.7, -27, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    if (enemy.bossShieldActive) {
+      this.drawBossImmunityShield(ctx, enemy.radius + 18, time, '#a3e635');
+    }
+
+    this.drawGothicHealthBar(ctx, 0, -enemy.radius - 20, 108, 8, enemy.currentHp, enemy.maxHp);
+  }
+
+  /**
+   * Renders the rotating hexagonal/octagonal Runic Immunity Barrier around a shielded Boss.
+   */
+  private static drawBossImmunityShield(
+    ctx: CanvasRenderingContext2D,
+    radius: number,
+    time: number,
+    color: string
+  ) {
+    ctx.save();
+    ctx.rotate(time * 1.8);
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.14)';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const a = (i * Math.PI) / 4;
+      const px = Math.cos(a) * radius;
+      const py = Math.sin(a) * radius;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Orbiting shield nodes
+    for (let i = 0; i < 4; i++) {
+      const a = -time * 3.2 + (i * Math.PI) / 2;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * radius, Math.sin(a) * radius, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /**
+   * Renders Pickups (Zero Text Clutter):
+   * - GOLD: Minted medieval gold coin with embossed royal crown crest
+   * - SHIELD_ORB: Miniature Knight Aegis Kite Shield with glowing sapphire core
+   * - FRENZY_ORB: Winged Arcane Lightning Crystal
+   * - HEART: Faceted Ruby Crystal Heart
    */
   public static drawHeartPickup(ctx: CanvasRenderingContext2D, heart: HeartPickup, time: number) {
     const floatY = Math.sin(time * 4.5 + heart.x) * 3;
@@ -1117,7 +1962,7 @@ export class SpriteModels {
     ctx.fill();
 
     if (pType === 'GOLD') {
-      const spinWidth = Math.max(2.5, Math.abs(Math.cos(time * 5 + heart.x)) * 8);
+      const spinWidth = Math.max(3, Math.abs(Math.cos(time * 5 + heart.x)) * 8.5);
       ctx.fillStyle = 'rgba(250, 204, 21, 0.22)';
       ctx.beginPath();
       ctx.arc(0, 0, 12, 0, Math.PI * 2);
@@ -1125,16 +1970,21 @@ export class SpriteModels {
 
       ctx.fillStyle = '#facc15';
       ctx.strokeStyle = '#b45309';
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 1.6;
       ctx.beginPath();
-      ctx.ellipse(0, 0, spinWidth, 8, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 0, spinWidth, 8.5, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
 
-      ctx.fillStyle = '#fde047';
-      ctx.font = 'bold 9px "Cinzel", serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(`+${heart.healAmount} 🪙`, 0, -13);
+      // Embossed inner mint mark
+      if (spinWidth > 4.5) {
+        ctx.strokeStyle = '#fef08a';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(0, -4);
+        ctx.lineTo(0, 4);
+        ctx.stroke();
+      }
       ctx.restore();
       return;
     }
@@ -1145,45 +1995,51 @@ export class SpriteModels {
       ctx.arc(0, 0, 13, 0, Math.PI * 2);
       ctx.fill();
 
+      // Kite Shield Silhouette
       ctx.fillStyle = '#0284c7';
       ctx.strokeStyle = '#bae6fd';
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 1.6;
       ctx.beginPath();
-      ctx.arc(0, 0, 7.5, 0, Math.PI * 2);
+      ctx.moveTo(0, -8);
+      ctx.lineTo(7, -5);
+      ctx.lineTo(5, 4);
+      ctx.lineTo(0, 9);
+      ctx.lineTo(-5, 4);
+      ctx.lineTo(-7, -5);
+      ctx.closePath();
       ctx.fill();
       ctx.stroke();
 
-      ctx.fillStyle = '#7dd3fc';
-      ctx.font = 'bold 9px "Cinzel", serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('+ESCUDO', 0, -13);
       ctx.restore();
       return;
     }
 
     if (pType === 'FRENZY_ORB') {
-      ctx.fillStyle = 'rgba(168, 85, 247, 0.3)';
+      ctx.fillStyle = 'rgba(168, 85, 247, 0.28)';
       ctx.beginPath();
       ctx.arc(0, 0, 14, 0, Math.PI * 2);
       ctx.fill();
 
+      // Jagged Lightning Crystal
       ctx.fillStyle = '#a855f7';
       ctx.strokeStyle = '#fde047';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.arc(0, 0, 8, 0, Math.PI * 2);
+      ctx.moveTo(2, -9);
+      ctx.lineTo(-6, 1);
+      ctx.lineTo(-1, 1);
+      ctx.lineTo(-3, 9);
+      ctx.lineTo(6, -1);
+      ctx.lineTo(1, -1);
+      ctx.closePath();
       ctx.fill();
       ctx.stroke();
 
-      ctx.fillStyle = '#e9d5ff';
-      ctx.font = 'bold 9px "Cinzel", serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('⚡ FRENESÍ', 0, -13);
       ctx.restore();
       return;
     }
 
-    // Default: Ruby Heart Shape
+    // Default: Faceted Ruby Heart
     const pulse = Math.sin(time * 6 + heart.y) * 2;
     ctx.fillStyle = 'rgba(239, 68, 68, 0.25)';
     ctx.beginPath();
@@ -1207,11 +2063,6 @@ export class SpriteModels {
     ctx.beginPath();
     ctx.arc(-2.5, -7.5, 1.5, 0, Math.PI * 2);
     ctx.fill();
-
-    ctx.fillStyle = '#fca5a5';
-    ctx.font = 'bold 9px "Cinzel", serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(`+${heart.healAmount} HP`, 0, -15);
 
     ctx.restore();
   }
@@ -1452,131 +2303,195 @@ export class SpriteModels {
   }
 
   /**
-   * The Grand Boss: "El Gran Maestre / Director del Abismo".
-   * A towering gothic gargoyle colossus with an iron furnace heart,
-   * stone crown, and floating detached gauntlets.
+   * BOSS 3: El Gran Arquitecto del Abismo (BOSS_DIRECTOR)
+   * 6-Winged Abyssal Seraph & Lich Inquisitor with a rotating halo of 8 obsidian daggers,
+   * tattered multi-layered vestments over a singularity furnace core, horned mitre skull,
+   * and articulated skeletal arms wielding an Abyssal Great-Scythe and an Astral Astrolabe.
    */
   private static drawBossDirector(ctx: CanvasRenderingContext2D, enemy: EnemyEntity, time: number) {
-    const isEnraged = enemy.bossPhase === 2;
-    const hoverY = Math.sin(time * 3) * 6;
+    const phase = enemy.bossPhase || 1;
+    const isEnraged = phase >= 2;
+    const hoverY = Math.sin(time * 3.2) * 6;
 
     // Giant ominous shadow on floor
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.62)';
     ctx.beginPath();
-    ctx.ellipse(0, 60, 48, 16, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 58, 52, 18, 0, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.save();
     ctx.translate(0, hoverY);
 
-    // Stone Gargoyle Wings (Spread out)
-    const wingFlap = Math.sin(time * 2.5) * 4;
-    ctx.fillStyle = '#292524';
-    ctx.strokeStyle = '#1c1917';
-    ctx.lineWidth = 3;
+    // 1. Halo of 8 Levitating Obsidian Daggers fanning behind the Architect
+    ctx.save();
+    ctx.translate(0, -18);
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + time * 1.4;
+      const dx = Math.cos(a) * 64;
+      const dy = Math.sin(a) * 38;
+      ctx.save();
+      ctx.translate(dx, dy);
+      ctx.rotate(a + Math.PI / 2);
+      ctx.fillStyle = isEnraged ? '#ef4444' : '#f59e0b';
+      ctx.strokeStyle = '#1c1917';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(0, -14);
+      ctx.lineTo(4, 4);
+      ctx.lineTo(0, 10);
+      ctx.lineTo(-4, 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
 
-    // Left Wing
-    ctx.beginPath();
-    ctx.moveTo(-20, -10);
-    ctx.lineTo(-75, -50 + wingFlap);
-    ctx.lineTo(-55, 0);
-    ctx.lineTo(-20, 20);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
+    // 2. 6 Articulated Seraphim Bone-and-Shadow Wings (Upper, Middle & Lower Pairs)
+    for (let side = -1; side <= 1; side += 2) {
+      for (let pair = 0; pair < 3; pair++) {
+        const beat = Math.sin(time * 4.2 - pair * 0.8) * (7 - pair * 1.5);
+        const yAnchor = -22 + pair * 15;
+        const span = 78 - pair * 12;
+        const tipY = -48 + pair * 26 + beat;
 
-    // Right Wing
-    ctx.beginPath();
-    ctx.moveTo(20, -10);
-    ctx.lineTo(75, -50 + wingFlap);
-    ctx.lineTo(55, 0);
-    ctx.lineTo(20, 20);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
+        ctx.fillStyle = pair === 1 ? '#450a0a' : '#1c1917';
+        ctx.strokeStyle = isEnraged ? '#dc2626' : '#78350f';
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.moveTo(side * 16, yAnchor);
+        ctx.quadraticCurveTo(side * (span * 0.65), tipY - 12, side * span, tipY);
+        ctx.lineTo(side * (span * 0.72), tipY + 18);
+        ctx.lineTo(side * 18, yAnchor + 12);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
 
-    // Massive Stone Body / Obsidian Torso
+    // 3. Tattered Multi-Layered Inquisitor Vestments & Ribbed Obsidian Cuirass
     ctx.fillStyle = '#1c1917';
+    ctx.strokeStyle = isEnraged ? '#dc2626' : '#b45309';
+    ctx.lineWidth = 2.8;
     ctx.beginPath();
-    ctx.roundRect(-36, -36, 72, 72, [20]);
+    ctx.moveTo(-28, -24);
+    ctx.lineTo(0, -32);
+    ctx.lineTo(28, -24);
+    ctx.lineTo(22, 16);
+    ctx.lineTo(28, 42);
+    ctx.lineTo(10, 34);
+    ctx.lineTo(0, 44);
+    ctx.lineTo(-10, 34);
+    ctx.lineTo(-28, 42);
+    ctx.lineTo(-22, 16);
+    ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = '#44403c';
-    ctx.lineWidth = 3;
     ctx.stroke();
 
-    // Molten Iron Furnace Heart (Center)
+    // 4. Abyssal Singularity Core & Ribcage Grille in Chest
     ctx.fillStyle = isEnraged ? 'rgba(239, 68, 68, 0.35)' : 'rgba(245, 158, 11, 0.3)';
     ctx.beginPath();
-    ctx.arc(0, 8, 25, 0, Math.PI * 2);
+    ctx.arc(0, 4, 22, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = isEnraged ? '#dc2626' : '#d97706';
     ctx.beginPath();
-    ctx.arc(0, 8, 18, 0, Math.PI * 2);
+    ctx.arc(0, 4, 14, 0, Math.PI * 2);
     ctx.fill();
 
-    // Heavy Iron Furnace Grille Bars
-    ctx.strokeStyle = '#1c1917';
-    ctx.lineWidth = 3.5;
-    ctx.beginPath();
-    ctx.moveTo(-14, -4);
-    ctx.lineTo(-14, 20);
-    ctx.moveTo(0, -8);
-    ctx.lineTo(0, 24);
-    ctx.moveTo(14, -4);
-    ctx.lineTo(14, 20);
-    ctx.stroke();
+    // Curved Gothic Ribcage over Core
+    ctx.strokeStyle = '#292524';
+    ctx.lineWidth = 3;
+    for (let ry = -6; ry <= 14; ry += 10) {
+      ctx.beginPath();
+      ctx.moveTo(-16, ry);
+      ctx.quadraticCurveTo(0, ry + 5, 16, ry);
+      ctx.stroke();
+    }
 
-    // Obsidian Head & Horned Stone Crown
-    ctx.fillStyle = '#292524';
+    // 5. Horned Lich Skull & Tall Gothic Inquisitor Mitre Crown
+    ctx.fillStyle = '#e2e8f0';
     ctx.beginPath();
-    ctx.arc(0, -32, 22, 0, Math.PI * 2);
+    ctx.moveTo(-12, -36);
+    ctx.lineTo(12, -36);
+    ctx.lineTo(10, -20);
+    ctx.lineTo(0, -16);
+    ctx.lineTo(-10, -20);
+    ctx.closePath();
     ctx.fill();
 
-    // Horns
-    ctx.fillStyle = '#44403c';
-    ctx.beginPath();
-    ctx.moveTo(-16, -38);
-    ctx.lineTo(-32, -58);
-    ctx.lineTo(-8, -44);
-    ctx.moveTo(16, -38);
-    ctx.lineTo(32, -58);
-    ctx.lineTo(8, -44);
-    ctx.fill();
-
-    // Menacing Molten Eyes
-    ctx.fillStyle = isEnraged ? '#f87171' : '#fef08a';
-    ctx.fillRect(-10, -34, 6, 4);
-    ctx.fillRect(4, -34, 6, 4);
-
-    // Floating Detached Iron Gauntlets (Left & Right)
-    const gauntletL = Math.sin(time * 4) * 8;
-    const gauntletR = Math.cos(time * 4) * 8;
-
-    // Left Gauntlet
-    ctx.fillStyle = '#44403c';
-    ctx.strokeStyle = '#1c1917';
+    // Tall Spiked Obsidian Crown / Mitre
+    ctx.fillStyle = '#1c1917';
+    ctx.strokeStyle = '#f59e0b';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.roundRect(-60, -8 + gauntletL, 18, 26, [6]);
+    ctx.moveTo(-14, -34);
+    ctx.lineTo(-18, -56);
+    ctx.lineTo(-7, -44);
+    ctx.lineTo(0, -64);
+    ctx.lineTo(7, -44);
+    ctx.lineTo(18, -56);
+    ctx.lineTo(14, -34);
+    ctx.closePath();
     ctx.fill();
     ctx.stroke();
 
-    // Right Gauntlet
+    // Blazing Crimson Eye Sockets
+    ctx.fillStyle = isEnraged ? '#fef08a' : '#ef4444';
     ctx.beginPath();
-    ctx.roundRect(42, -8 + gauntletR, 18, 26, [6]);
+    ctx.arc(-5, -28, 2.8, 0, Math.PI * 2);
+    ctx.arc(5, -28, 2.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 6. Articulated Skeletal Arms: Right Arm Wields Abyssal Great-Scythe, Left Arm Channels Astral Astrolabe
+    const scytheSwing = Math.sin(time * 4.5) * 0.28;
+    ctx.save();
+    ctx.translate(36, -4);
+    ctx.rotate(scytheSwing);
+    // Scythe Shaft
+    ctx.strokeStyle = '#44403c';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(-8, 32);
+    ctx.lineTo(12, -38);
+    ctx.stroke();
+    // Curved Crimson Great-Scythe Blade
+    ctx.fillStyle = '#dc2626';
+    ctx.strokeStyle = '#fef08a';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(12, -38);
+    ctx.quadraticCurveTo(46, -36, 54, -8);
+    ctx.quadraticCurveTo(32, -22, 10, -26);
+    ctx.closePath();
     ctx.fill();
     ctx.stroke();
+    ctx.restore();
+
+    // Left Arm: Spinning Astral Astrolabe
+    const orbY = -4 + Math.cos(time * 4.5) * 6;
+    ctx.save();
+    ctx.translate(-46, orbY);
+    ctx.rotate(-time * 3);
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 14, 7, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, 7, 14, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#ef4444';
+    ctx.beginPath();
+    ctx.arc(0, 0, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
 
     ctx.restore();
 
-    // Huge Boss Health Bar
-    this.drawGothicHealthBar(ctx, 0, -enemy.radius - 38, 120, 9, enemy.currentHp, enemy.maxHp);
-    ctx.font = 'bold 13px "Cinzel", serif';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#090807';
-    ctx.fillText(enemy.name.toUpperCase(), 1, -enemy.radius - 49);
-    ctx.fillStyle = '#f59e0b';
-    ctx.fillText(enemy.name.toUpperCase(), 0, -enemy.radius - 50);
+    if (enemy.bossShieldActive) {
+      this.drawBossImmunityShield(ctx, enemy.radius + 20, time, '#f59e0b');
+    }
+
+    // Boss Health Bar (Zero Text Clutter)
+    this.drawGothicHealthBar(ctx, 0, -enemy.radius - 26, 120, 9, enemy.currentHp, enemy.maxHp);
   }
 
   /* ========================================================================= */
@@ -1584,7 +2499,7 @@ export class SpriteModels {
   /* ========================================================================= */
 
   /**
-   * Detailed carved medieval chest with iron bandings and rivets.
+   * Detailed carved medieval chest with arched oak lid, iron bandings, and golden treasure glow (Zero Text).
    */
   public static drawChest(ctx: CanvasRenderingContext2D, x: number, y: number, isOpen: boolean, time: number) {
     ctx.save();
@@ -1598,7 +2513,7 @@ export class SpriteModels {
 
     if (isOpen) {
       // Open Chest with Golden Light Aura
-      ctx.fillStyle = 'rgba(217, 119, 6, 0.2)';
+      ctx.fillStyle = 'rgba(217, 119, 6, 0.22)';
       ctx.beginPath();
       ctx.arc(0, -6, 40, 0, Math.PI * 2);
       ctx.fill();
@@ -1610,66 +2525,75 @@ export class SpriteModels {
       ctx.fillRect(-22, -8, 6, 24);
       ctx.fillRect(16, -8, 6, 24);
 
-      // Open Lid tilted back
-      ctx.fillStyle = '#78350f';
-      ctx.fillRect(-24, -26, 48, 14);
-      ctx.fillStyle = '#b45309';
-      ctx.fillRect(-18, -26, 6, 14);
-      ctx.fillRect(12, -26, 6, 14);
-
-      // Treasure Glow Inside
-      ctx.fillStyle = '#f59e0b';
-      ctx.fillRect(-16, -6, 32, 6);
-    } else {
-      // Closed Ornate Treasure Chest
-      const pulse = Math.sin(time * 3) * 1.5;
-
-      // Dark Wood Body
-      ctx.fillStyle = '#451a03';
-      ctx.fillRect(-22, -14 + pulse, 44, 28);
-
-      // Curved Wood Lid
+      // Open Arched Lid tilted back
       ctx.fillStyle = '#78350f';
       ctx.beginPath();
-      ctx.roundRect(-24, -24 + pulse, 48, 14, [6, 6, 0, 0]);
+      ctx.moveTo(-24, -12);
+      ctx.quadraticCurveTo(0, -32, 24, -12);
+      ctx.closePath();
       ctx.fill();
+
+      // Overflowing Gold & Gems Inside
+      ctx.fillStyle = '#facc15';
+      ctx.beginPath();
+      ctx.ellipse(0, -6, 16, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      const pulse = Math.sin(time * 3.5) * 1.5;
+
+      // Golden invitation halo beneath closed chest
+      ctx.strokeStyle = 'rgba(250, 204, 21, 0.45)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(0, 12, 28 + pulse, 11, 0, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Dark Oak Body
+      ctx.fillStyle = '#451a03';
+      ctx.fillRect(-22, -10 + pulse, 44, 24);
+
+      // Arched Oak Lid (custom bezier arch, no roundRect)
+      ctx.fillStyle = '#78350f';
+      ctx.strokeStyle = '#292524';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-24, -10 + pulse);
+      ctx.quadraticCurveTo(-24, -25 + pulse, 0, -25 + pulse);
+      ctx.quadraticCurveTo(24, -25 + pulse, 24, -10 + pulse);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
 
       // Wrought Iron Straps & Rivets
       ctx.fillStyle = '#292524';
-      ctx.fillRect(-16, -24 + pulse, 6, 38);
-      ctx.fillRect(10, -24 + pulse, 6, 38);
+      ctx.fillRect(-16, -23 + pulse, 6, 37);
+      ctx.fillRect(10, -23 + pulse, 6, 37);
 
       // Golden Rivets
       ctx.fillStyle = '#d97706';
       ctx.beginPath();
-      ctx.arc(-13, -18 + pulse, 1.5, 0, Math.PI * 2);
-      ctx.arc(13, -18 + pulse, 1.5, 0, Math.PI * 2);
+      ctx.arc(-13, -16 + pulse, 1.5, 0, Math.PI * 2);
+      ctx.arc(13, -16 + pulse, 1.5, 0, Math.PI * 2);
       ctx.arc(-13, 6 + pulse, 1.5, 0, Math.PI * 2);
       ctx.arc(13, 6 + pulse, 1.5, 0, Math.PI * 2);
       ctx.fill();
 
       // Ornate Brass Skull Padlock
-      ctx.fillStyle = '#b45309';
+      ctx.fillStyle = '#f59e0b';
       ctx.beginPath();
-      ctx.arc(0, -6 + pulse, 5.5, 0, Math.PI * 2);
+      ctx.arc(0, -8 + pulse, 5.5, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#1c1917';
       ctx.beginPath();
-      ctx.arc(0, -6 + pulse, 2, 0, Math.PI * 2);
+      ctx.arc(0, -8 + pulse, 2, 0, Math.PI * 2);
       ctx.fill();
-
-      // Floating Prompt
-      ctx.fillStyle = '#f59e0b';
-      ctx.font = 'bold 11px "Cinzel", serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('ABRIR COFRE', 0, -32 + pulse);
     }
 
     ctx.restore();
   }
 
   /**
-   * Heavy double oak doors with iron bands, drop-portcullis, and branching encounter portals.
+   * Heavy double oak doors with iron bands, drop-portcullis, and swirling runic portals (Zero Text).
    */
   public static drawDoor(
     ctx: CanvasRenderingContext2D,
@@ -1682,7 +2606,7 @@ export class SpriteModels {
   ) {
     ctx.save();
 
-    // Stone Archway Frame
+    // Stone Archway Frame with Chiseled Pillars
     ctx.fillStyle = '#1c1917';
     ctx.fillRect(x - 6, y - 6, w + 12, h + 12);
     ctx.strokeStyle = '#44403c';
@@ -1691,26 +2615,26 @@ export class SpriteModels {
 
     const enc = door?.encounterType || 'STANDARD';
     const portalColor =
-      enc === 'ELITE' ? '#dc2626' : enc === 'SANCTUARY' ? '#10b981' : enc === 'BOSS' ? '#f97316' : '#d97706';
+      enc === 'ELITE' ? '#dc2626' : enc === 'SANCTUARY' ? '#10b981' : enc === 'BOSS' ? '#f97316' : '#22c55e';
 
     if (isOpen) {
-      ctx.fillStyle = '#0c0a09';
+      ctx.fillStyle = '#090807';
       ctx.fillRect(x, y, w, h);
 
+      // Swirling Energy Vortex inside open doorway
       ctx.fillStyle = portalColor;
+      ctx.globalAlpha = 0.78;
       ctx.fillRect(x + 6, y + 4, w - 12, h - 8);
+      ctx.globalAlpha = 1.0;
 
-      ctx.fillStyle = '#fef3c7';
-      ctx.font = 'bold 10px "Cinzel", serif';
-      ctx.textAlign = 'center';
-      const label = door?.label || 'AVANZAR ⬆';
-      if (door?.direction === 'EAST') {
-        ctx.fillText(label, x - 38, y + h / 2 + 4);
-      } else if (door?.direction === 'WEST') {
-        ctx.fillText(label, x + w + 38, y + h / 2 + 4);
-      } else {
-        ctx.fillText(label, x + w / 2, y + h + 14);
-      }
+      // Bright Inner Portal Core & Crest Icon (Visual symbol instead of text: Skull for Elite/Boss, Scales for Sanctuary)
+      const cx = x + w / 2;
+      const cy = y + h / 2;
+      ctx.strokeStyle = '#fef08a';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, Math.min(w, h) * 0.28, 0, Math.PI * 2);
+      ctx.stroke();
     } else {
       ctx.fillStyle = '#292524';
       ctx.fillRect(x, y, w, h);
@@ -1722,6 +2646,7 @@ export class SpriteModels {
       ctx.lineTo(x + w / 2, y + h);
       ctx.stroke();
 
+      // Iron Portcullis Bars & Crimson Spikes
       ctx.strokeStyle = '#78716c';
       ctx.lineWidth = 3.5;
       for (let barX = x + 12; barX < x + w - 4; barX += 16) {
@@ -1743,7 +2668,8 @@ export class SpriteModels {
   }
 
   /**
-   * Renders the Altar of Pacts & Armory where players upgrade weapons and sign AI Pacts.
+   * Renders the Altar of Pacts & Armory:
+   * Stepped Gothic Stone Pedestal with a Forged Iron Anvil & Warhammer + Levitating Blood Chalice (Zero Text).
    */
   public static drawAltar(ctx: CanvasRenderingContext2D, altar: AltarEntity, time: number) {
     ctx.save();
@@ -1751,36 +2677,55 @@ export class SpriteModels {
 
     const pulse = Math.sin(time * 4) * 3;
 
-    // Mystical Purple/Gold Floor Halo
+    // Mystical Runic Halo on Floor
     ctx.fillStyle = altar.pact.used ? 'rgba(120, 113, 108, 0.15)' : 'rgba(168, 85, 247, 0.22)';
     ctx.beginPath();
     ctx.arc(0, 0, 48 + pulse, 0, Math.PI * 2);
     ctx.fill();
 
-    // Stone Pedestal
+    // Stepped Chiseled Gothic Pedestal (Polygonal stone plinth)
     ctx.fillStyle = '#1c1917';
     ctx.strokeStyle = '#a855f7';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.roundRect(-24, -14, 48, 30, [6]);
+    ctx.moveTo(-26, 14);
+    ctx.lineTo(-22, -12);
+    ctx.lineTo(22, -12);
+    ctx.lineTo(26, 14);
+    ctx.closePath();
     ctx.fill();
     ctx.stroke();
 
-    // Floating Cursed Contract Scroll & Anvil Icon
-    ctx.fillStyle = '#f59e0b';
-    ctx.font = 'bold 18px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(altar.pact.used ? '⚒️' : '⚖️', 0, 4 + pulse * 0.5);
+    // Forged Iron Anvil on Pedestal
+    ctx.fillStyle = '#57534e';
+    ctx.strokeStyle = '#d97706';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-14, -12);
+    ctx.lineTo(-18, -20);
+    ctx.lineTo(14, -20);
+    ctx.lineTo(22, -16);
+    ctx.lineTo(12, -12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
 
-    ctx.fillStyle = '#e9d5ff';
-    ctx.font = 'bold 10px "Cinzel", serif';
-    ctx.fillText('ALTAR & ARMERÍA [F]', 0, -24 + pulse * 0.4);
+    // Floating Golden Pact Chalice / Flame above Anvil
+    const floatY = -28 + pulse * 0.6;
+    ctx.fillStyle = altar.pact.used ? '#f59e0b' : '#c084fc';
+    ctx.beginPath();
+    ctx.moveTo(-6, floatY - 6);
+    ctx.lineTo(6, floatY - 6);
+    ctx.lineTo(3, floatY + 2);
+    ctx.lineTo(-3, floatY + 2);
+    ctx.closePath();
+    ctx.fill();
 
     ctx.restore();
   }
 
   /**
-   * Renders Interactive Barrels (Explosive, Frost, Toxic).
+   * Renders Interactive Barrels with curved wooden staves and iron hoops (Explosive, Frost, Toxic).
    */
   public static drawBarrel(ctx: CanvasRenderingContext2D, barrel: BarrelEntity, time: number) {
     ctx.save();
@@ -1796,21 +2741,26 @@ export class SpriteModels {
     const rimColor =
       barrel.type === 'FROST' ? '#38bdf8' : barrel.type === 'TOXIC' ? '#4ade80' : '#f97316';
 
-    // Barrel Body
+    // Curved Wooden Stave Cask Silhouette (bezier curves instead of roundRect)
     ctx.fillStyle = mainColor;
     ctx.strokeStyle = '#1c1917';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.roundRect(-14, -16, 28, 32, [6]);
+    ctx.moveTo(-11, -16);
+    ctx.lineTo(11, -16);
+    ctx.quadraticCurveTo(16, 0, 11, 16);
+    ctx.lineTo(-11, 16);
+    ctx.quadraticCurveTo(-16, 0, -11, -16);
+    ctx.closePath();
     ctx.fill();
     ctx.stroke();
 
     // Iron Hoops
     ctx.fillStyle = '#44403c';
-    ctx.fillRect(-15, -10, 30, 4);
-    ctx.fillRect(-15, 6, 30, 4);
+    ctx.fillRect(-14, -10, 28, 3.5);
+    ctx.fillRect(-14, 6, 28, 3.5);
 
-    // Glowing Hazard Emblem
+    // Glowing Elemental Core Emblem
     const pulse = Math.sin(time * 7 + barrel.x) * 1.5;
     ctx.fillStyle = rimColor;
     ctx.beginPath();
@@ -1846,7 +2796,6 @@ export class SpriteModels {
       ctx.arc(0, 0, h.radius + swirl, 0, Math.PI * 2);
       ctx.fill();
     } else if (h.type === 'SPIKE_TRAP') {
-      // Metallic floor plate
       ctx.fillStyle = '#1c1917';
       ctx.strokeStyle = h.active ? '#ef4444' : '#57534e';
       ctx.lineWidth = 2;
@@ -1855,7 +2804,6 @@ export class SpriteModels {
       ctx.fill();
       ctx.stroke();
 
-      // Spikes (retracted holes vs impaling steel blades)
       const positions = [
         { x: -12, y: -12 },
         { x: 12, y: -12 },
@@ -1909,7 +2857,6 @@ export class SpriteModels {
       ctx.arc(0, 0, h.radius, 0, Math.PI * 2);
       ctx.stroke();
 
-      // Inner filling danger circle
       ctx.fillStyle = 'rgba(220, 38, 38, 0.45)';
       ctx.beginPath();
       ctx.arc(0, 0, h.radius * prog, 0, Math.PI * 2);
@@ -1924,17 +2871,26 @@ export class SpriteModels {
       ctx.stroke();
       ctx.setLineDash([]);
 
-      ctx.fillStyle = '#10b981';
-      ctx.beginPath();
-      ctx.arc(0, 0, 12 + pulse, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 9px "Cinzel", serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('CLON EXPLOSIVO', 0, -18);
-    } else if (h.type === 'BEAR_TRAP') {
-      ctx.strokeStyle = '#38bdf8';
+      // Hooded Shadow Clone Silhouette with Ticking Alchemical Core (Zero Text)
+      ctx.fillStyle = '#064e3b';
+      ctx.strokeStyle = '#10b981';
       ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, -16);
+      ctx.lineTo(12, 12);
+      ctx.lineTo(-12, 12);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#34d399';
+      ctx.beginPath();
+      ctx.arc(0, 2, 5 + pulse * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (h.type === 'BEAR_TRAP') {
+      // Serrated Steel Jaws of Hunter's Bear Trap
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 2.2;
       ctx.beginPath();
       ctx.arc(0, 0, 14, 0, Math.PI * 2);
       ctx.stroke();
@@ -1947,9 +2903,6 @@ export class SpriteModels {
     ctx.restore();
   }
 
-  /**
-   * Wall Torch with flickering flame and warm ambient light.
-   */
   /**
    * Wall Torch with multi-layered flickering flame and ornate serpent iron sconce.
    */
@@ -1992,7 +2945,6 @@ export class SpriteModels {
     const flick1 = Math.sin(time * 18 + x) * 2;
     const flick2 = Math.cos(time * 24 + y) * 1.5;
 
-    // 1. Outer Flame Mantle (Fiery Orange with heat tongue)
     ctx.fillStyle = '#ea580c';
     ctx.beginPath();
     ctx.moveTo(4, -10);
@@ -2001,7 +2953,6 @@ export class SpriteModels {
     ctx.closePath();
     ctx.fill();
 
-    // 2. Mid Flame (Brilliant Gold)
     ctx.fillStyle = '#f59e0b';
     ctx.beginPath();
     ctx.moveTo(5, -10);
@@ -2010,7 +2961,6 @@ export class SpriteModels {
     ctx.closePath();
     ctx.fill();
 
-    // 3. Hot Core (Blinding Yellow-White)
     ctx.fillStyle = '#fef08a';
     ctx.beginPath();
     ctx.arc(8 + flick2 * 0.3, -12, 3, 0, Math.PI * 2);
@@ -2026,13 +2976,11 @@ export class SpriteModels {
     ctx.save();
     ctx.translate(x, y);
 
-    // Cast soft diagonal ground shadow (southeast)
     ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
     ctx.beginPath();
     ctx.ellipse(14, 18, 30, 14, Math.PI / 6, 0, Math.PI * 2);
     ctx.fill();
 
-    // Stepped Chiseled Plinth (Base)
     ctx.fillStyle = '#1c1917';
     ctx.fillRect(-22, 4, 44, 16);
     ctx.strokeStyle = '#44403c';
@@ -2043,11 +2991,9 @@ export class SpriteModels {
     ctx.fillRect(-18, -4, 36, 8);
     ctx.strokeRect(-18, -4, 36, 8);
 
-    // Fluted Column Shaft
     ctx.fillStyle = '#1c1917';
     ctx.fillRect(-14, -48, 28, 44);
 
-    // Fluting ridges (Vertical chisel lines)
     ctx.strokeStyle = '#44403c';
     ctx.lineWidth = 1.5;
     for (let lx = -10; lx <= 10; lx += 5) {
@@ -2057,7 +3003,6 @@ export class SpriteModels {
       ctx.stroke();
     }
 
-    // Iron Band around center column with rivets
     ctx.fillStyle = '#57534e';
     ctx.fillRect(-15, -28, 30, 5);
     ctx.fillStyle = '#d97706';
@@ -2067,7 +3012,6 @@ export class SpriteModels {
     ctx.arc(8, -25.5, 1.2, 0, Math.PI * 2);
     ctx.fill();
 
-    // Ornate Carved Capital at top
     ctx.fillStyle = '#292524';
     ctx.beginPath();
     ctx.moveTo(-20, -48);
@@ -2079,7 +3023,6 @@ export class SpriteModels {
     ctx.strokeStyle = '#57534e';
     ctx.stroke();
 
-    // Gargoyle stone crest on capital
     ctx.fillStyle = '#78716c';
     ctx.beginPath();
     ctx.arc(0, -53, 4, 0, Math.PI * 2);
@@ -2089,7 +3032,7 @@ export class SpriteModels {
   }
 
   /**
-   * Ancient Gothic Ritual Circle engraved into stone with runic symbols and glowing center crest.
+   * Ancient Gothic Ritual Circle engraved into stone with carved crystal nodes and central eye crest (Zero Text).
    */
   public static drawRitualCircle(
     ctx: CanvasRenderingContext2D,
@@ -2120,27 +3063,24 @@ export class SpriteModels {
         ? 'rgba(234, 88, 12, 0.2)'
         : 'rgba(217, 119, 6, 0.16)';
 
-    // Ambient runic floor glow
     ctx.fillStyle = glowColor;
     ctx.beginPath();
     ctx.arc(0, 0, radius, 0, Math.PI * 2);
     ctx.fill();
 
-    // Outer Concentric Ring
     ctx.strokeStyle = mainColor;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(0, 0, radius, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Inner Secondary Ring
     ctx.strokeStyle = mainColor;
     ctx.lineWidth = 1.2;
     ctx.beginPath();
     ctx.arc(0, 0, radius * 0.85, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Octagram (8-pointed geometric star)
+    // Octagram (8-pointed star)
     ctx.lineWidth = 1.2;
     const rOuter = radius * 0.85;
     const rInner = radius * 0.42;
@@ -2156,29 +3096,25 @@ export class SpriteModels {
     ctx.closePath();
     ctx.stroke();
 
-    // Concentric Center Medallion
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.arc(0, 0, radius * 0.32, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // 8 Engraved Arcane Runes in Ring
+    // 8 Carved Diamond Crystal Nodes around Ring
     ctx.fillStyle = mainColor;
-    ctx.font = 'bold 12px "Cinzel", serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const runes = ['ᚦ', 'ᚱ', 'ᚲ', 'ᚷ', 'ᚹ', 'ᚺ', 'ᛃ', 'ᛈ'];
     for (let i = 0; i < 8; i++) {
       const a = (i * Math.PI) / 4 + Math.PI / 8;
       const rx = Math.cos(a) * (radius * 0.92);
       const ry = Math.sin(a) * (radius * 0.92);
-      ctx.fillText(runes[i], rx, ry);
+      ctx.beginPath();
+      ctx.moveTo(rx, ry - 4);
+      ctx.lineTo(rx + 4, ry);
+      ctx.lineTo(rx, ry + 4);
+      ctx.lineTo(rx - 4, ry);
+      ctx.closePath();
+      ctx.fill();
     }
 
-    // Center Demon Eye / Sol Invictus crest
+    // Center All-Seeing Eye Crest
     ctx.fillStyle = mainColor;
     ctx.beginPath();
-    ctx.ellipse(0, 0, radius * 0.16, radius * 0.1, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, radius * 0.18, radius * 0.11, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#0c0a09';
     ctx.beginPath();
@@ -2208,7 +3144,6 @@ export class SpriteModels {
     ctx.strokeStyle = 'rgba(214, 211, 209, 0.2)';
     ctx.lineWidth = 1;
 
-    // Radial spines
     for (let a = 0; a <= Math.PI / 2; a += Math.PI / 8) {
       ctx.beginPath();
       ctx.moveTo(0, 0);
@@ -2216,7 +3151,6 @@ export class SpriteModels {
       ctx.stroke();
     }
 
-    // Concentric web arches
     for (let r = size * 0.25; r <= size; r += size * 0.25) {
       ctx.beginPath();
       ctx.arc(0, 0, r, 0, Math.PI / 2);
@@ -2233,19 +3167,16 @@ export class SpriteModels {
     ctx.save();
     ctx.translate(x, y);
 
-    // Weathered skull
     ctx.fillStyle = '#e2e8f0';
     ctx.beginPath();
     ctx.arc(0, 0, 5, 0, Math.PI * 2);
     ctx.fill();
-    // Eye sockets
     ctx.fillStyle = '#1c1917';
     ctx.beginPath();
     ctx.arc(-1.5, -0.5, 1.2, 0, Math.PI * 2);
     ctx.arc(1.5, -0.5, 1.2, 0, Math.PI * 2);
     ctx.fill();
 
-    // Shattered Femur Bones
     ctx.strokeStyle = '#cbd5e1';
     ctx.lineWidth = 1.8;
     ctx.beginPath();
@@ -2255,7 +3186,6 @@ export class SpriteModels {
     ctx.lineTo(8, 5);
     ctx.stroke();
 
-    // Ribcage curved remnant
     ctx.lineWidth = 1.2;
     ctx.beginPath();
     ctx.arc(4, 3, 5, -Math.PI / 2, Math.PI / 3);
@@ -2279,11 +3209,9 @@ export class SpriteModels {
 
     const sway = Math.sin(time * 2.2 + x) * 1.5;
 
-    // Iron Wall Staple
     ctx.fillStyle = '#44403c';
     ctx.fillRect(-4, 0, 8, 4);
 
-    // Interlocking Chain Links
     for (let i = 0; i < links; i++) {
       const ly = 4 + i * 7;
       const lx = (i / links) * sway;
@@ -2295,7 +3223,6 @@ export class SpriteModels {
       ctx.stroke();
     }
 
-    // Heavy Iron Shackle Collar at end
     const endY = 4 + links * 7;
     ctx.strokeStyle = '#292524';
     ctx.lineWidth = 2.5;
@@ -2313,16 +3240,13 @@ export class SpriteModels {
     ctx.save();
     ctx.translate(x, y);
 
-    // Dark square pit
     ctx.fillStyle = '#090807';
     ctx.fillRect(-size / 2, -size / 2, size, size);
 
-    // Iron border rim
     ctx.strokeStyle = '#292524';
     ctx.lineWidth = 2;
     ctx.strokeRect(-size / 2, -size / 2, size, size);
 
-    // Vertical Iron Grating Bars
     ctx.strokeStyle = '#57534e';
     ctx.lineWidth = 1.5;
     for (let bx = -size / 2 + 5; bx < size / 2; bx += 6) {
@@ -2350,75 +3274,104 @@ export class SpriteModels {
   ) {
     const pct = Math.max(0, Math.min(1, current / max));
 
-    // Dark Iron Casing
     ctx.fillStyle = '#0c0a09';
     ctx.fillRect(x - width / 2 - 1, y - height / 2 - 1, width + 2, height + 2);
 
-    // Blood Fill
     ctx.fillStyle = pct > 0.5 ? '#b91c1c' : pct > 0.25 ? '#ea580c' : '#7f1d1d';
     ctx.fillRect(x - width / 2, y - height / 2, width * pct, height);
 
-    // Iron Rivet Border
     ctx.strokeStyle = '#44403c';
     ctx.lineWidth = 1;
     ctx.strokeRect(x - width / 2 - 1, y - height / 2 - 1, width + 2, height + 2);
   }
 
   /**
-   * Renders interior Labyrinth Stone Walls and Destructible Secret Walls!
+   * Renders interior Labyrinth Stone Masonry Walls and Cracked Secret Vault Walls
+   * with golden lightbeams and treasure glints leaking through the fractures (Zero Text Clutter).
    */
   public static drawLabyrinthWall(ctx: CanvasRenderingContext2D, wall: WallSegment, time: number) {
     if (wall.isOpen) {
-      // Draw shattered rubble on the floor where the secret wall stood
+      // Scattered stone rubble on the floor where the secret wall shattered
       ctx.save();
-      ctx.fillStyle = 'rgba(250, 204, 21, 0.14)';
-      ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
+      ctx.fillStyle = '#292524';
+      ctx.strokeStyle = '#57534e';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 4; i++) {
+        const rx = wall.x + 8 + ((i * 17) % Math.max(12, wall.width - 14));
+        const ry = wall.y + 10 + ((i * 29) % Math.max(14, wall.height - 18));
+        ctx.beginPath();
+        ctx.arc(rx, ry, 5 + (i % 2) * 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
       ctx.restore();
       return;
     }
 
     ctx.save();
-    // Drop shadow
+    // Cast drop shadow
     ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
     ctx.fillRect(wall.x + 6, wall.y + 8, wall.width, wall.height);
 
-    // Chiseled Stone Body
+    // Base Stone Masonry
     ctx.fillStyle = wall.isSecretWall ? '#292524' : '#1c1917';
-    ctx.strokeStyle = wall.isSecretWall ? '#f59e0b' : '#44403c';
-    ctx.lineWidth = wall.isSecretWall ? 2.5 : 2;
+    ctx.strokeStyle = wall.isSecretWall ? '#d97706' : '#44403c';
+    ctx.lineWidth = 2;
     ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
     ctx.strokeRect(wall.x, wall.y, wall.width, wall.height);
 
-    // Inner stone bevel
-    ctx.strokeStyle = 'rgba(168, 162, 158, 0.16)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(wall.x + 4, wall.y + 4, Math.max(4, wall.width - 8), Math.max(4, wall.height - 8));
+    // Individual Interlocking Stone Ashlar Blocks & Mortar Joints
+    ctx.strokeStyle = '#0c0a09';
+    ctx.lineWidth = 1.5;
+    const isVertical = wall.height > wall.width;
+    if (isVertical) {
+      for (let by = wall.y + 28; by < wall.y + wall.height - 8; by += 28) {
+        ctx.beginPath();
+        ctx.moveTo(wall.x + 2, by);
+        ctx.lineTo(wall.x + wall.width - 2, by);
+        ctx.stroke();
+      }
+    } else {
+      for (let bx = wall.x + 34; bx < wall.x + wall.width - 8; bx += 34) {
+        ctx.beginPath();
+        ctx.moveTo(bx, wall.y + 2);
+        ctx.lineTo(bx, wall.y + wall.height - 2);
+        ctx.stroke();
+      }
+    }
 
     if (wall.isSecretWall) {
-      // Glowing golden runic cracks indicating a destructible Secret Wall!
+      // Deep Structural Fractures Leaking Warm Golden Treasure Light & Floating Gold Motes (Zero Text!)
       const shimmer = 0.55 + Math.sin(time * 6) * 0.35;
-      ctx.strokeStyle = `rgba(250, 204, 21, ${shimmer})`;
-      ctx.lineWidth = 2;
       const cx = wall.x + wall.width / 2;
       const cy = wall.y + wall.height / 2;
-      ctx.beginPath();
-      ctx.moveTo(cx - 8, cy - 22);
-      ctx.lineTo(cx + 4, cy - 4);
-      ctx.lineTo(cx - 6, cy + 12);
-      ctx.lineTo(cx + 7, cy + 26);
-      ctx.stroke();
 
-      ctx.fillStyle = '#fde047';
-      ctx.font = 'bold 10px "Cinzel", serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('🗝️ MURO SECRETO (ATACA)', cx, wall.y - 8);
+      // Warm golden light spill around cracked masonry
+      ctx.fillStyle = `rgba(250, 204, 21, ${shimmer * 0.24})`;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 38, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Jagged golden fissures & cracks
+      ctx.strokeStyle = `rgba(253, 224, 71, ${shimmer})`;
+      ctx.lineWidth = 2.6;
+      ctx.beginPath();
+      ctx.moveTo(cx - 8, cy - 32);
+      ctx.lineTo(cx + 5, cy - 10);
+      ctx.lineTo(cx - 7, cy + 8);
+      ctx.lineTo(cx + 8, cy + 30);
+      ctx.moveTo(cx + 5, cy - 10);
+      ctx.lineTo(cx + 13, cy - 2);
+      ctx.stroke();
     }
 
     ctx.restore();
   }
 
   /**
-   * Renders Co-op Runic Synchronization Seals on the labyrinth floor.
+   * Renders Co-op Runic Synchronization Seals on the floor:
+   * Sunken octagonal stone pedestal with 8 crystal sockets that ignite progressively as players stand on it,
+   * and an animated mechanical iris eye in the center (Zero Text Clutter).
    */
   public static drawSyncSeal(ctx: CanvasRenderingContext2D, seal: SyncSeal, time: number) {
     ctx.save();
@@ -2437,53 +3390,63 @@ export class SpriteModels {
     ctx.arc(0, 0, seal.radius, 0, Math.PI * 2);
     ctx.fill();
 
-    // Base Runic Ring
-    ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
-    ctx.lineWidth = 3;
+    // Sunken Octagonal Stone Pedestal Ring
+    ctx.strokeStyle = '#44403c';
+    ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.arc(0, 0, seal.radius, 0, Math.PI * 2);
     ctx.stroke();
 
     // Progress Arc (0% -> 100%)
-    const pct = seal.isActivated ? 1 : Math.max(0.08, seal.progress);
+    const pct = seal.isActivated ? 1 : Math.max(0.06, seal.progress);
     ctx.strokeStyle = activeColor;
-    ctx.lineWidth = 4.5;
+    ctx.lineWidth = 5;
     ctx.beginPath();
     ctx.arc(0, 0, seal.radius, -Math.PI / 2, -Math.PI / 2 + pct * Math.PI * 2);
     ctx.stroke();
 
-    // Inner Rotating Eye Sigil
+    // 8 Carved Crystal Sockets around the perimeter that light up one by one with progress!
+    const litSockets = Math.round(pct * 8);
+    for (let i = 0; i < 8; i++) {
+      const a = -Math.PI / 2 + (i * Math.PI) / 4;
+      const sx = Math.cos(a) * (seal.radius - 10);
+      const sy = Math.sin(a) * (seal.radius - 10);
+      const isLit = seal.isActivated || i < litSockets;
+
+      ctx.fillStyle = isLit ? activeColor : '#1c1917';
+      ctx.strokeStyle = isLit ? '#ffffff' : '#57534e';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - 4.5);
+      ctx.lineTo(sx + 4.5, sy);
+      ctx.lineTo(sx, sy + 4.5);
+      ctx.lineTo(sx - 4.5, sy);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // Inner Rotating Astrolabe Star
     ctx.save();
-    ctx.rotate(time * (seal.isActivated ? 1.5 : 3));
+    ctx.rotate(time * (seal.isActivated ? 1.5 : 3.2));
     ctx.strokeStyle = activeColor;
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(-18, -18, 36, 36);
+    ctx.lineWidth = 1.6;
+    for (let r = 0; r < 2; r++) {
+      ctx.rotate(Math.PI / 4);
+      ctx.strokeRect(-16, -16, 32, 32);
+    }
     ctx.restore();
 
-    // Center Eye Crest
+    // Center Mechanical All-Seeing Eye (opens wider as seal charges!)
+    const eyeOpen = seal.isActivated ? 9 : 4 + pct * 5;
     ctx.fillStyle = activeColor;
     ctx.beginPath();
-    ctx.ellipse(0, 0, 14, 8, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, 15, eyeOpen, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#09090b';
     ctx.beginPath();
     ctx.arc(0, 0, 4, 0, Math.PI * 2);
     ctx.fill();
-
-    // Label & Percentage
-    ctx.fillStyle = seal.isActivated ? '#86efac' : '#e0f2fe';
-    ctx.font = 'bold 10px "Cinzel", serif';
-    ctx.textAlign = 'center';
-    const pctText = seal.isActivated
-      ? `✓ ${seal.label || 'SELLO'} ACTIVO`
-      : `👁️ ${seal.label || 'SELLO RÚNICO'} (${Math.round(seal.progress * 100)}%)`;
-    ctx.fillText(pctText, 0, -seal.radius - 10);
-
-    if (!seal.isActivated) {
-      ctx.fillStyle = '#fde047';
-      ctx.font = 'bold 9px "Inter", sans-serif';
-      ctx.fillText('⚡ PÁRATE AQUÍ PARA SINCRONIZAR', 0, seal.radius + 16);
-    }
 
     ctx.restore();
   }
