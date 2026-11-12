@@ -58,6 +58,7 @@ export const App: React.FC = () => {
   // Sequence numbering & input replay history buffer for 100% rubberband-free reconciliation
   const inputSeqRef = useRef<number>(1);
   const inputHistoryRef = useRef<PendingInput[]>([]);
+  const lastInputTimeRef = useRef<number>(Date.now());
 
   // Input buffering for high-responsiveness actions (130ms window)
   const bufferedActionRef = useRef<{ type: 'DASH' | 'SKILL'; readyAt: number } | null>(null);
@@ -203,7 +204,12 @@ export const App: React.FC = () => {
             const isIce = updated.room.mutation.frictionMultiplier < 0.3;
 
             for (const inp of inputHistoryRef.current) {
-              if (!inp.isDashing) {
+              if (inp.isDashing) {
+                const dirX = inp.len > 0.1 ? inp.moveX / inp.len : Math.cos(inp.angle);
+                const dirY = inp.len > 0.1 ? inp.moveY / inp.len : Math.sin(inp.angle);
+                rvx = dirX * baseStats.dashSpeed;
+                rvy = dirY * baseStats.dashSpeed;
+              } else {
                 const normX = inp.len > 0 ? (inp.moveX / inp.len) * targetSpeed : 0;
                 const normY = inp.len > 0 ? (inp.moveY / inp.len) * targetSpeed : 0;
                 const rate = isIce ? (inp.len > 0 ? 14 : 1.8) : 22;
@@ -261,17 +267,27 @@ export const App: React.FC = () => {
             }
 
             // Smooth gentle error correction
+            // Never snap backwards while actively dashing locally or during post-dash decay
+            const isLocalDashing = sim.isDashing || now < sim.dashEndsAt;
             const errDist = Math.hypot(rx - sim.x, ry - sim.y);
-            if (errDist > 80) {
-              sim.x = rx;
-              sim.y = ry;
-              sim.vx = rvx;
-              sim.vy = rvy;
-            } else if (errDist > 4) {
-              sim.x += (rx - sim.x) * 0.18;
-              sim.y += (ry - sim.y) * 0.18;
-              sim.vx = rvx;
-              sim.vy = rvy;
+            if (!isLocalDashing) {
+              if (errDist > 80) {
+                sim.x = rx;
+                sim.y = ry;
+                sim.vx = rvx;
+                sim.vy = rvy;
+              } else if (errDist > 4) {
+                sim.x += (rx - sim.x) * 0.18;
+                sim.y += (ry - sim.y) * 0.18;
+                sim.vx = rvx;
+                sim.vy = rvy;
+              }
+            } else {
+              // During active dash: do NOT hard snap. Only micro-adjust if difference is small and aligned.
+              if (errDist > 6 && errDist < 50) {
+                sim.x += (rx - sim.x) * 0.08;
+                sim.y += (ry - sim.y) * 0.08;
+              }
             }
           }
 
@@ -699,16 +715,18 @@ export const App: React.FC = () => {
     const isAttacking = isMouseDown.current || touchAttack.current;
     const seq = ++inputSeqRef.current;
     const now = Date.now();
+    const dt = lastInputTimeRef.current > 0 ? Math.max(0.01, Math.min(0.08, (now - lastInputTimeRef.current) / 1000)) : 0.05;
+    lastInputTimeRef.current = now;
 
     // Store in history buffer for replay reconciliation
     inputHistoryRef.current.push({
       seq,
-      dt: 0.05,
+      dt,
       moveX,
       moveY,
       len,
       angle: sim.angle,
-      isDashing: overrideDash || sim.isDashing,
+      isDashing: overrideDash || sim.isDashing || now < sim.dashEndsAt,
       timestamp: now,
     });
     if (inputHistoryRef.current.length > 120) {
@@ -803,12 +821,15 @@ export const App: React.FC = () => {
     if (player.classType === 'PICARO') {
       const W = currentWorld.room.width || 1200;
       const H = currentWorld.room.height || 800;
+      const originX = sim.x;
+      const originY = sim.y;
       sim.x = Math.max(60, Math.min(W - 60, sim.x + Math.cos(sim.angle) * 145));
       sim.y = Math.max(60, Math.min(H - 60, sim.y + Math.sin(sim.angle) * 145));
       player.x = sim.x;
       player.y = sim.y;
       player.stealthedUntil = now + 2600;
-      rendererRef.current.particleSystem.emitExplosion(sim.x, sim.y, 60, '#10b981');
+      inputHistoryRef.current = []; // Clear pending inputs so old walking inputs don't pull back
+      rendererRef.current.particleSystem.emitExplosion(originX, originY, 60, '#10b981');
     } else if (player.classType === 'GUERRERO') {
       player.skillActiveUntil = now + 2200;
       rendererRef.current.particleSystem.addShockwave(sim.x, sim.y, 170, '#f59e0b', 4);

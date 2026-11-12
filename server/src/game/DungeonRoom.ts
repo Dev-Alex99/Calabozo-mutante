@@ -1023,7 +1023,7 @@ export class DungeonRoom {
         player.x = Math.max(32, Math.min(W - 32, input.x));
         player.y = Math.max(32, Math.min(H - 32, input.y));
         this.resolveWallCollisions(player, 18);
-        if (typeof input.vx === 'number' && typeof input.vy === 'number' && !player.isDashing) {
+        if (typeof input.vx === 'number' && typeof input.vy === 'number') {
           player.vx = input.vx;
           player.vy = input.vy;
         }
@@ -1068,7 +1068,7 @@ export class DungeonRoom {
     if (input.isUsingSkill && now >= player.skillCooldownEndsAt) {
       player.skillCooldownEndsAt = now + stats.skillCooldownMs;
       this.telemetry.skillsUsedCount++;
-      this.activateClassSkill(player, stats, now, input.clientTime);
+      this.activateClassSkill(player, stats, now, input.clientTime, typeof input.x === 'number');
     }
 
     // 3. Handle Primary Attack
@@ -1085,7 +1085,8 @@ export class DungeonRoom {
     player: PlayerEntity,
     stats: ReturnType<typeof this.getPlayerEffectiveStats>,
     now: number,
-    clientTime?: number
+    clientTime?: number,
+    hasClientPosition = false
   ): void {
     const W = this.roomWidth;
     const H = this.roomHeight;
@@ -1213,11 +1214,15 @@ export class DungeonRoom {
       });
     } else if (player.classType === 'PICARO') {
       // PASO SOMBRÍO & SEÑUELO EXPLOSIVO
+      // Calculate origin where decoy bomb should be left
+      const decoyX = hasClientPosition ? player.x - Math.cos(player.angle) * 145 : player.x;
+      const decoyY = hasClientPosition ? player.y - Math.sin(player.angle) * 145 : player.y;
+
       this.hazards.push({
         id: `decoy_${this.nextEventId++}`,
         type: 'DECOY_BOMB',
-        x: player.x,
-        y: player.y,
+        x: Math.max(60, Math.min(W - 60, decoyX)),
+        y: Math.max(60, Math.min(H - 60, decoyY)),
         radius: 115,
         active: true,
         createdAt: now,
@@ -1227,9 +1232,12 @@ export class DungeonRoom {
       });
       this.hazardsDirty = true;
 
-      // Blink forward & enter stealth
-      player.x = Math.max(60, Math.min(W - 60, player.x + Math.cos(player.angle) * 145));
-      player.y = Math.max(60, Math.min(H - 60, player.y + Math.sin(player.angle) * 145));
+      // Teleport forward for bots or when client did not provide predicted position
+      if (!hasClientPosition) {
+        player.x = Math.max(60, Math.min(W - 60, player.x + Math.cos(player.angle) * 145));
+        player.y = Math.max(60, Math.min(H - 60, player.y + Math.sin(player.angle) * 145));
+      }
+      this.resolveWallCollisions(player, 18);
       player.stealthedUntil = now + 2600;
       player.invulnerableUntil = Math.max(player.invulnerableUntil, now + 600);
 
@@ -2075,9 +2083,9 @@ export class DungeonRoom {
         p.vy *= 0.55;
       }
 
-      // Only server-integrate position if player is a bot, dashing, or hasn't sent client-predicted coords in 90ms
+      // Only server-integrate position if player is a bot or hasn't sent client-predicted coords in 90ms
       const lastSync = this.lastClientSyncAt[p.id] || 0;
-      if (p.isBot || p.isDashing || now - lastSync > 90) {
+      if (p.isBot || now - lastSync > 90) {
         p.x += p.vx * dt;
         p.y += p.vy * dt;
       }
