@@ -8,6 +8,11 @@ import {
   DoorState,
   WallSegment,
   SyncSeal,
+  ActiveTrap,
+  CoopPuzzle,
+  PuzzlePlate,
+  TimedTorch,
+  WeaponEvolutionId,
 } from '../types';
 
 /**
@@ -3447,6 +3452,579 @@ export class SpriteModels {
     ctx.beginPath();
     ctx.arc(0, 0, 4, 0, Math.PI * 2);
     ctx.fill();
+
+    ctx.restore();
+  }
+
+  /**
+   * Renders dynamic environmental hazards & traps (Pendulum Blades, Fire Grates, Wall Darts)
+   */
+  public static drawActiveTrap(ctx: CanvasRenderingContext2D, trap: ActiveTrap, totalTime: number) {
+    ctx.save();
+
+    if (trap.type === 'PENDULUM') {
+      const length = trap.armLength || 180;
+      const period = trap.periodMs || 2400;
+      const elapsed = Date.now() + (trap.offsetMs || 0);
+      const phase = (elapsed % period) / period;
+      const angle = Math.sin(phase * Math.PI * 2) * (Math.PI / 3.2);
+
+      const anchorX = trap.x;
+      const anchorY = trap.y - length;
+      const bladeX = anchorX + Math.sin(angle) * length;
+      const bladeY = anchorY + Math.cos(angle) * length;
+
+      // 1. Blade Drop Shadow on Dungeon Floor
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+      ctx.beginPath();
+      ctx.ellipse(bladeX, trap.y + 12, 42, 14, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 2. Ceiling Pivot Anchor Bracket
+      ctx.fillStyle = '#292524';
+      ctx.strokeStyle = '#78716c';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(anchorX, anchorY, 12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#d6d3d1';
+      ctx.beginPath();
+      ctx.arc(anchorX, anchorY, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 3. Heavy Iron Articulated Suspension Chain
+      ctx.strokeStyle = '#44403c';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(anchorX, anchorY);
+      ctx.lineTo(bladeX, bladeY);
+      ctx.stroke();
+
+      ctx.strokeStyle = '#a8a29e';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 5]);
+      ctx.beginPath();
+      ctx.moveTo(anchorX, anchorY);
+      ctx.lineTo(bladeX, bladeY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 4. Crescent Steel Guillotine Blade
+      ctx.save();
+      ctx.translate(bladeX, bladeY);
+      ctx.rotate(angle);
+
+      // Swing speed visual blur trail
+      const swingSpeed = Math.abs(Math.cos(phase * Math.PI * 2));
+      if (swingSpeed > 0.45) {
+        ctx.fillStyle = 'rgba(244, 63, 94, 0.22)';
+        ctx.beginPath();
+        ctx.arc(0, 0, 54, 0, Math.PI);
+        ctx.fill();
+      }
+
+      // Blade mounting bracket
+      ctx.fillStyle = '#1c1917';
+      ctx.fillRect(-12, -8, 24, 16);
+
+      // Curved Crescent Blade
+      ctx.fillStyle = '#e2e8f0';
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, -6, 48, Math.PI * 0.15, Math.PI * 0.85, false);
+      ctx.quadraticCurveTo(0, 16, -42, 10);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Razor-sharp edge reflection
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.arc(0, -6, 48, Math.PI * 0.18, Math.PI * 0.82, false);
+      ctx.stroke();
+
+      // Blood-stained serrations
+      ctx.fillStyle = '#991b1b';
+      ctx.beginPath();
+      ctx.arc(0, -6, 46, Math.PI * 0.35, Math.PI * 0.65, false);
+      ctx.lineTo(12, 18);
+      ctx.lineTo(-12, 18);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.restore();
+    } else if (trap.type === 'FIRE_GRATE') {
+      const w = trap.width || 76;
+      const h = trap.height || 76;
+      const period = trap.periodMs || 3000;
+      const elapsed = (Date.now() + (trap.offsetMs || 0)) % period;
+      const isPreErupt = elapsed > period - 650;
+      const isActive = elapsed < 1200;
+
+      // Base Grate Frame with scorched stone rim
+      ctx.fillStyle = '#0c0a09';
+      ctx.strokeStyle = '#44403c';
+      ctx.lineWidth = 2;
+      ctx.fillRect(trap.x - w / 2, trap.y - h / 2, w, h);
+      ctx.strokeRect(trap.x - w / 2, trap.y - h / 2, w, h);
+
+      // Corner Bolts
+      ctx.fillStyle = '#78716c';
+      const corners = [
+        [-w / 2 + 5, -h / 2 + 5],
+        [w / 2 - 5, -h / 2 + 5],
+        [-w / 2 + 5, h / 2 - 5],
+        [w / 2 - 5, h / 2 - 5],
+      ];
+      for (const [cx, cy] of corners) {
+        ctx.beginPath();
+        ctx.arc(trap.x + cx, trap.y + cy, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Interior Furnace Pit
+      if (isActive) {
+        // Blazing Flame Eruption
+        const flameGrad = ctx.createRadialGradient(trap.x, trap.y, 4, trap.x, trap.y, w * 0.7);
+        flameGrad.addColorStop(0, '#fef08a');
+        flameGrad.addColorStop(0.35, '#f97316');
+        flameGrad.addColorStop(0.85, 'rgba(220, 38, 38, 0.85)');
+        flameGrad.addColorStop(1, 'rgba(185, 28, 28, 0)');
+        ctx.fillStyle = flameGrad;
+        ctx.fillRect(trap.x - w / 2, trap.y - h / 2, w, h);
+
+        // Flame plumes
+        ctx.fillStyle = '#fbbf24';
+        for (let i = -w / 2 + 10; i < w / 2; i += 14) {
+          const flameH = 18 + Math.sin(totalTime * 22 + i) * 12;
+          ctx.beginPath();
+          ctx.moveTo(trap.x + i - 6, trap.y + h / 4);
+          ctx.lineTo(trap.x + i, trap.y - flameH);
+          ctx.lineTo(trap.x + i + 6, trap.y + h / 4);
+          ctx.closePath();
+          ctx.fill();
+        }
+      } else if (isPreErupt) {
+        // Warning Glowing Embers & smoke
+        const glow = 0.5 + Math.sin(totalTime * 18) * 0.45;
+        ctx.fillStyle = `rgba(239, 68, 68, ${glow})`;
+        ctx.fillRect(trap.x - w / 2 + 3, trap.y - h / 2 + 3, w - 6, h - 6);
+      } else {
+        // Dormant Smoldering Coals
+        ctx.fillStyle = '#450a0a';
+        ctx.fillRect(trap.x - w / 2 + 3, trap.y - h / 2 + 3, w - 6, h - 6);
+      }
+
+      // Cast Iron Slotted Bars
+      ctx.strokeStyle = '#1c1917';
+      ctx.lineWidth = 3.5;
+      for (let bx = -w / 2 + 12; bx < w / 2; bx += 11) {
+        ctx.beginPath();
+        ctx.moveTo(trap.x + bx, trap.y - h / 2 + 3);
+        ctx.lineTo(trap.x + bx, trap.y + h / 2 - 3);
+        ctx.stroke();
+      }
+    } else if (trap.type === 'DART_LAUNCHER') {
+      const w = trap.width || 44;
+      const h = trap.height || 44;
+
+      // Gargoyle / Demon Face Stone Relief
+      ctx.fillStyle = '#292524';
+      ctx.strokeStyle = '#57534e';
+      ctx.lineWidth = 2;
+      ctx.fillRect(trap.x - w / 2, trap.y - h / 2, w, h);
+      ctx.strokeRect(trap.x - w / 2, trap.y - h / 2, w, h);
+
+      // Fanged Open Maw (Launcher Nozzle)
+      ctx.fillStyle = '#0c0a09';
+      ctx.beginPath();
+      ctx.arc(trap.x, trap.y, 9, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Glowing Demonic Eyes
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.arc(trap.x - 7, trap.y - 8, 2.2, 0, Math.PI * 2);
+      ctx.arc(trap.x + 7, trap.y - 8, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * Renders Cooperative Puzzles (Runic Sequence Plates & Timed Torches)
+   */
+  public static drawCoopPuzzle(ctx: CanvasRenderingContext2D, puzzle: CoopPuzzle, totalTime: number) {
+    ctx.save();
+
+    if (puzzle.type === 'RUNIC_SEQUENCE' && puzzle.plates) {
+      for (let idx = 0; idx < puzzle.plates.length; idx++) {
+        const plate = puzzle.plates[idx];
+        const isPressed = plate.isPressed;
+        const color = isPressed ? '#38bdf8' : puzzle.isSolved ? '#22c55e' : '#64748b';
+
+        // Outer Stone Base
+        ctx.fillStyle = isPressed ? '#082f49' : '#1e293b';
+        ctx.strokeStyle = color;
+        ctx.lineWidth = isPressed ? 2.5 : 1.5;
+        const s = 48;
+        ctx.fillRect(plate.x - s / 2, plate.y - s / 2, s, s);
+        ctx.strokeRect(plate.x - s / 2, plate.y - s / 2, s, s);
+
+        // Glowing Rune Glyphs
+        ctx.fillStyle = color;
+        ctx.font = 'bold 20px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(plate.symbol || 'ᚱ', plate.x, plate.y);
+
+        // Sequence Order Pip
+        ctx.fillStyle = isPressed ? '#fef08a' : '#475569';
+        ctx.beginPath();
+        ctx.arc(plate.x, plate.y - s / 2 + 6, 2.8, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Pulsing Light Field when activated
+        if (isPressed) {
+          const pulse = 28 + Math.sin(totalTime * 8 + idx) * 3;
+          ctx.strokeStyle = 'rgba(56, 189, 248, 0.4)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(plate.x, plate.y, pulse, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+    } else if (puzzle.type === 'TORCH_GAUNTLET' && puzzle.torches) {
+      for (let idx = 0; idx < puzzle.torches.length; idx++) {
+        const torch = puzzle.torches[idx];
+        const isLit = torch.lit;
+
+        // Bronze Brazier Base
+        ctx.fillStyle = '#292524';
+        ctx.strokeStyle = '#78716c';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(torch.x, torch.y + 10, 22, 10, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#44403c';
+        ctx.fillRect(torch.x - 8, torch.y - 12, 16, 22);
+
+        // Brazier Bowl
+        ctx.fillStyle = '#1c1917';
+        ctx.strokeStyle = isLit ? '#38bdf8' : '#78716c';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(torch.x, torch.y - 14, 18, 0, Math.PI, false);
+        ctx.fill();
+        ctx.stroke();
+
+        if (isLit) {
+          // Mystic Blue Brazier Flame
+          const flameH = 26 + Math.sin(totalTime * 14 + idx) * 6;
+          const flameGrad = ctx.createRadialGradient(
+            torch.x,
+            torch.y - 20,
+            2,
+            torch.x,
+            torch.y - 20,
+            24
+          );
+          flameGrad.addColorStop(0, '#f0fdf4');
+          flameGrad.addColorStop(0.3, '#38bdf8');
+          flameGrad.addColorStop(0.8, '#0284c7');
+          flameGrad.addColorStop(1, 'rgba(2, 132, 199, 0)');
+          ctx.fillStyle = flameGrad;
+          ctx.beginPath();
+          ctx.moveTo(torch.x - 12, torch.y - 16);
+          ctx.quadraticCurveTo(torch.x, torch.y - 20 - flameH, torch.x + 12, torch.y - 16);
+          ctx.closePath();
+          ctx.fill();
+
+          // Circular Countdown Gauge Ring around the base
+          const litRemainingMs = Math.max(0, torch.litUntil - Date.now());
+          if (litRemainingMs > 0) {
+            const pct = Math.max(0, Math.min(1, litRemainingMs / 7000));
+            ctx.strokeStyle = pct < 0.3 ? '#ef4444' : '#38bdf8';
+            ctx.lineWidth = 3.5;
+            ctx.beginPath();
+            ctx.arc(torch.x, torch.y + 10, 28, -Math.PI / 2, -Math.PI / 2 + pct * Math.PI * 2);
+            ctx.stroke();
+          }
+        } else {
+          // Extinguished Coals
+          ctx.fillStyle = '#0c0a09';
+          ctx.beginPath();
+          ctx.arc(torch.x, torch.y - 14, 10, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * Renders the Blood Sacrifice Altar (AI Dungeon Director Live Dilemma)
+   */
+  public static drawSacrificeAltar(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    totalTime: number,
+    isUsed: boolean
+  ) {
+    ctx.save();
+    ctx.translate(x, y);
+
+    // Occult Ground Circle
+    ctx.strokeStyle = isUsed ? '#44403c' : 'rgba(239, 68, 68, 0.7)';
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([8, 6]);
+    ctx.beginPath();
+    ctx.arc(0, 0, 54, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (!isUsed) {
+      // Rotating arcane ring
+      ctx.save();
+      ctx.rotate(totalTime * 1.5);
+      ctx.strokeStyle = 'rgba(220, 38, 38, 0.4)';
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i < 4; i++) {
+        ctx.rotate(Math.PI / 2);
+        ctx.strokeRect(-20, -20, 40, 40);
+      }
+      ctx.restore();
+    }
+
+    // Basalt Pedestal
+    ctx.fillStyle = '#0c0a09';
+    ctx.strokeStyle = isUsed ? '#292524' : '#7f1d1d';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(0, 10, 32, 16, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Hovering Demonic Relic / Skull
+    const hoverY = -18 + Math.sin(totalTime * 4) * 4;
+    ctx.fillStyle = isUsed ? '#57534e' : '#dc2626';
+    ctx.strokeStyle = isUsed ? '#292524' : '#f87171';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.arc(0, hoverY, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Eye sockets
+    ctx.fillStyle = isUsed ? '#1c1917' : '#fef08a';
+    ctx.beginPath();
+    ctx.arc(-5, hoverY - 2, 2.5, 0, Math.PI * 2);
+    ctx.arc(5, hoverY - 2, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Interaction Prompt
+    if (!isUsed) {
+      ctx.fillStyle = '#f87171';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('[E] PACTO DE SANGRE', 0, -42);
+      ctx.fillStyle = '#fca5a5';
+      ctx.font = '9px sans-serif';
+      ctx.fillText('-40 HP  •  +30% DAÑO', 0, -30);
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * Renders the Rune Bearer Target Insignia (Director Live Bounty Event)
+   */
+  public static drawRuneBearerMarker(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    totalTime: number
+  ) {
+    ctx.save();
+    ctx.translate(x, y - 48);
+
+    // 1. Demonic Eye Reticle
+    const pulse = 18 + Math.sin(totalTime * 6) * 2.5;
+    ctx.strokeStyle = '#dc2626';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, pulse, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 2. Rotating Rune Pips
+    ctx.save();
+    ctx.rotate(totalTime * 2.5);
+    ctx.fillStyle = '#facc15';
+    for (let i = 0; i < 3; i++) {
+      const a = (i * Math.PI * 2) / 3;
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * pulse, Math.sin(a) * pulse, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // 3. Center Glowing Iris
+    ctx.fillStyle = '#ef4444';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 10, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fef08a';
+    ctx.beginPath();
+    ctx.arc(0, 0, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 4. Bounty Banner Badge
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+    ctx.strokeStyle = '#dc2626';
+    ctx.lineWidth = 1.2;
+    ctx.fillRect(-52, -26, 104, 15);
+    ctx.strokeRect(-52, -26, 104, 15);
+
+    ctx.fillStyle = '#f87171';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('PORTADOR DE RUNA', 0, -15);
+
+    ctx.restore();
+  }
+
+  /**
+   * Renders Swirling Weapon Evolution Auras & Elemental Orbiters
+   */
+  public static drawWeaponEvolutionAura(
+    ctx: CanvasRenderingContext2D,
+    player: PlayerEntity,
+    totalTime: number
+  ) {
+    if (!player.weaponEvolution || !player.isAlive) return;
+
+    ctx.save();
+    ctx.translate(player.x, player.y);
+
+    const evo = player.weaponEvolution;
+    const baseR = 20;
+
+    if (evo === 'GUERRERO_METEORO') {
+      // Swirling Magma Trail & Orbiting Molten Shards
+      const r = baseR + 14;
+      ctx.strokeStyle = 'rgba(234, 88, 12, 0.6)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.stroke();
+
+      for (let i = 0; i < 3; i++) {
+        const a = totalTime * 3.5 + (i * Math.PI * 2) / 3;
+        const ox = Math.cos(a) * r;
+        const oy = Math.sin(a) * r;
+        ctx.fillStyle = '#f97316';
+        ctx.beginPath();
+        ctx.arc(ox, oy, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#fef08a';
+        ctx.beginPath();
+        ctx.arc(ox, oy, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (evo === 'GUERRERO_ESPINAS') {
+      // Barbed Retribution Barrier & Spiked Orbiters
+      const r = baseR + 12;
+      ctx.strokeStyle = 'rgba(168, 85, 247, 0.5)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      for (let i = 0; i < 4; i++) {
+        const a = -totalTime * 2.8 + (i * Math.PI * 2) / 4;
+        const ox = Math.cos(a) * r;
+        const oy = Math.sin(a) * r;
+        ctx.fillStyle = '#c084fc';
+        ctx.beginPath();
+        ctx.moveTo(ox, oy - 5);
+        ctx.lineTo(ox + 4, oy + 4);
+        ctx.lineTo(ox - 4, oy + 4);
+        ctx.closePath();
+        ctx.fill();
+      }
+    } else if (evo === 'CAZADOR_GATLING') {
+      // Golden Kinetic Speed Vortices
+      const r = baseR + 10;
+      ctx.strokeStyle = 'rgba(250, 204, 21, 0.55)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, totalTime * 6, totalTime * 6 + Math.PI);
+      ctx.stroke();
+    } else if (evo === 'CAZADOR_RELAMPAGO') {
+      // Crackling Cobalt Lightning Bolts
+      const r = baseR + 13;
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 3; i++) {
+        const a1 = totalTime * 5 + (i * Math.PI * 2) / 3;
+        const a2 = a1 + 0.6;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a1) * r, Math.sin(a1) * r);
+        ctx.lineTo(Math.cos((a1 + a2) / 2) * (r + 5), Math.sin((a1 + a2) / 2) * (r + 5));
+        ctx.lineTo(Math.cos(a2) * r, Math.sin(a2) * r);
+        ctx.stroke();
+      }
+    } else if (evo === 'MAGO_TORMENTA') {
+      // Violent Violet Tempest Ring
+      const r = baseR + 15;
+      ctx.strokeStyle = 'rgba(192, 132, 252, 0.65)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, -totalTime * 4.5, -totalTime * 4.5 + Math.PI * 1.5);
+      ctx.stroke();
+    } else if (evo === 'MAGO_FENIX') {
+      // Radiant Golden-Crimson Phoenix Wings Silhouette
+      ctx.fillStyle = 'rgba(249, 115, 22, 0.35)';
+      const wingSpan = 28 + Math.sin(totalTime * 5) * 4;
+      ctx.beginPath();
+      ctx.ellipse(-14, 0, wingSpan, 8, -Math.PI / 6, 0, Math.PI * 2);
+      ctx.ellipse(14, 0, wingSpan, 8, Math.PI / 6, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (evo === 'PICARO_SOMBRAS') {
+      // Ethereal Void Tentacles & Shadow Wisps
+      ctx.fillStyle = 'rgba(88, 28, 135, 0.45)';
+      for (let i = 0; i < 4; i++) {
+        const a = totalTime * 3 + (i * Math.PI * 2) / 4;
+        const ox = Math.cos(a) * (baseR + 10);
+        const oy = Math.sin(a) * (baseR + 10);
+        ctx.beginPath();
+        ctx.arc(ox, oy, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (evo === 'PICARO_TRAMPERO') {
+      // Emerald Caltrop Orbiters
+      const r = baseR + 12;
+      for (let i = 0; i < 3; i++) {
+        const a = -totalTime * 3 + (i * Math.PI * 2) / 3;
+        const ox = Math.cos(a) * r;
+        const oy = Math.sin(a) * r;
+        ctx.fillStyle = '#10b981';
+        ctx.beginPath();
+        ctx.arc(ox, oy, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
 
     ctx.restore();
   }

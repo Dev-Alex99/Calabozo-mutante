@@ -1395,6 +1395,247 @@ class SoundManager {
       osc.stop(now + 0.06);
     });
   }
+
+  /**
+   * Heavy Pendulum Blade Whoosh
+   */
+  public playPendulumWhoosh(): void {
+    if (this.settings.muted || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    const dur = 0.28;
+    const bufferSize = Math.floor(this.ctx.sampleRate * dur);
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.sin((i / bufferSize) * Math.PI);
+    }
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = buffer;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(160, now);
+    filter.frequency.exponentialRampToValueAtTime(750, now + dur * 0.4);
+    filter.frequency.exponentialRampToValueAtTime(120, now + dur);
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.01, now);
+    gain.gain.linearRampToValueAtTime(0.25, now + dur * 0.35);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.sfxGain!);
+
+    noise.start(now);
+    noise.stop(now + dur);
+  }
+
+  /**
+   * Fire Grate Flame Eruption
+   */
+  public playFireGrateBlast(): void {
+    if (this.settings.muted || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    const dur = 0.35;
+    const bufferSize = Math.floor(this.ctx.sampleRate * dur);
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = buffer;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(300, now);
+    filter.frequency.exponentialRampToValueAtTime(1600, now + 0.08);
+    filter.frequency.exponentialRampToValueAtTime(220, now + dur);
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.05, now);
+    gain.gain.linearRampToValueAtTime(0.3, now + 0.06);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.sfxGain!);
+
+    noise.start(now);
+    noise.stop(now + dur);
+  }
+
+  /**
+   * Runic Puzzle Plate Activation Chime
+   */
+  public playPuzzleChime(step: number = 0): void {
+    if (this.settings.muted || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    const notes = [440, 554.37, 659.25, 880, 1046.5];
+    const freq = notes[step % notes.length];
+
+    const osc = this.ctx.createOscillator();
+    const subOsc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, now);
+    subOsc.type = 'triangle';
+    subOsc.frequency.setValueAtTime(freq * 2, now);
+
+    gain.gain.setValueAtTime(0.22, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+
+    osc.connect(gain);
+    subOsc.connect(gain);
+    gain.connect(this.sfxGain!);
+
+    osc.start(now);
+    subOsc.start(now);
+    osc.stop(now + 0.6);
+    subOsc.stop(now + 0.6);
+  }
+
+  /**
+   * Puzzle Solved Fanfare
+   */
+  public playPuzzleSolved(): void {
+    if (this.settings.muted || !this.ctx) return;
+    const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
+    notes.forEach((freq, i) => {
+      const now = this.ctx!.currentTime + i * 0.12;
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, now);
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+      osc.connect(gain);
+      gain.connect(this.sfxGain!);
+      osc.start(now);
+      osc.stop(now + 0.7);
+    });
+  }
+
+  /**
+   * AI Dungeon Director: Pitch Black Out Sub-Boom
+   */
+  public playDirectorBlackout(): void {
+    if (this.settings.muted || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const drone = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(110, now);
+    osc.frequency.exponentialRampToValueAtTime(32, now + 1.2);
+
+    drone.type = 'sawtooth';
+    drone.frequency.setValueAtTime(55, now);
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(140, now);
+
+    gain.gain.setValueAtTime(0.4, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 1.4);
+
+    osc.connect(gain);
+    drone.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.sfxGain!);
+
+    osc.start(now);
+    drone.start(now);
+    osc.stop(now + 1.4);
+    drone.stop(now + 1.4);
+  }
+
+  /**
+   * Weapon Evolution Triumphant Surge
+   */
+  public playWeaponEvolved(): void {
+    if (this.settings.muted || !this.ctx) return;
+    const notes = [329.63, 440, 554.37, 659.25, 880, 1108.7];
+    notes.forEach((freq, idx) => {
+      const now = this.ctx!.currentTime + idx * 0.08;
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(freq, now);
+
+      const filter = this.ctx!.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(freq * 3, now);
+
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.sfxGain!);
+
+      osc.start(now);
+      osc.stop(now + 0.8);
+    });
+  }
+
+  /**
+   * Combined Elemental Reactions Sound FX
+   */
+  public playElementalCombo(type: string = 'NOXIOUS_COMBUSTION'): void {
+    if (this.settings.muted || !this.ctx) return;
+    const now = this.ctx.currentTime;
+
+    if (type === 'NOXIOUS_COMBUSTION') {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(140, now);
+      osc.frequency.exponentialRampToValueAtTime(45, now + 0.3);
+      gain.gain.setValueAtTime(0.28, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      osc.connect(gain);
+      gain.connect(this.sfxGain!);
+      osc.start(now);
+      osc.stop(now + 0.35);
+    } else if (type === 'SHATTER_SUPERCONDUCT') {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(1200, now);
+      osc.frequency.exponentialRampToValueAtTime(240, now + 0.22);
+      gain.gain.setValueAtTime(0.22, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+      osc.connect(gain);
+      gain.connect(this.sfxGain!);
+      osc.start(now);
+      osc.stop(now + 0.25);
+    } else if (type === 'FLASH_MELT') {
+      const dur = 0.25;
+      const bufferSize = Math.floor(this.ctx.sampleRate * dur);
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = buffer;
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(2800, now);
+      filter.Q.value = 3.5;
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(0.25, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.sfxGain!);
+      noise.start(now);
+      noise.stop(now + dur);
+    }
+  }
 }
 
 export const sfx = new SoundManager();

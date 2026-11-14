@@ -1,12 +1,16 @@
 import { Server } from 'socket.io';
 import { config } from '../config.js';
 import {
+  ActiveTrap,
   AltarEntity,
   BarrelEntity,
   CLASS_CONFIGS,
+  ChestEntity,
+  CoopPuzzle,
   DirectorDialogue,
   DoorDirection,
   DoorState,
+  ElementalReactionType,
   EliteModifier,
   EnemyEntity,
   EnemyType,
@@ -14,16 +18,23 @@ import {
   GameWorldState,
   HazardZone,
   HeartPickup,
+  MacroRoom,
+  MacroRoomType,
   PillarEntity,
   PlayerClass,
   PlayerEntity,
   ProjectileEntity,
+  PuzzlePlate,
   Relic,
   RoomEncounterType,
   RoomMutation,
   RoomState,
   SyncSeal,
+  TimedTorch,
+  TrapType,
   WallSegment,
+  WeaponEvolutionId,
+  WEAPON_EVOLUTIONS,
   WorldEventFX,
 } from '../types.js';
 import { DungeonDirector } from '../ai/DungeonDirector.js';
@@ -63,6 +74,15 @@ export class DungeonRoom {
   public chestClaimedBy: string[] = [];
   public altar: AltarEntity | null = null;
   public directorAnger = 0;
+  public macroRooms: MacroRoom[] = [];
+  public activeTraps: ActiveTrap[] = [];
+  public puzzles: CoopPuzzle[] = [];
+  public puzzleChest: ChestEntity | null = null;
+  public pitchBlackUntil = 0;
+  public sacrificeAltarActive = false;
+  public sacrificeUsed = false;
+  public runeBearerPlayerId: string | null = null;
+  public lastDirectorInterventionAt = 0;
 
   private io: Server;
   private director: DungeonDirector;
@@ -402,6 +422,7 @@ export class DungeonRoom {
       this.hearts = [];
       this.recentEvents = [];
       this.chestClaimedBy = [];
+      this.puzzleChest = null;
       this.roomClearAnnounced = false;
       this.interventionTriggeredInRoom = false;
       this.secretFound = false;
@@ -409,32 +430,17 @@ export class DungeonRoom {
       this.totalWaves = isBoss || this.encounterType === 'SANCTUARY' ? 1 : index === 1 ? 2 : 3;
       this.lastClientSyncAt = {};
 
-      // Dynamic room dimensions: Huge labyrinths for exploration, focused arenas for Bosses
+      // Dynamic room dimensions: Huge multi-room macro dungeons for exploration, focused arena for Bosses
       if (isBoss) {
-        this.roomWidth = 1650;
-        this.roomHeight = 1150;
-      } else if (this.encounterType === 'SANCTUARY') {
-        this.roomWidth = 1550;
-        this.roomHeight = 1080;
+        this.roomWidth = 2400;
+        this.roomHeight = 1700;
       } else {
-        this.roomWidth = config.game.roomWidth; // 2000
-        this.roomHeight = config.game.roomHeight; // 1450
+        this.roomWidth = 3600;
+        this.roomHeight = 2250;
       }
 
       const W = this.roomWidth;
       const H = this.roomHeight;
-
-      // Immediately move players away from doors before any async work and revive fallen allies!
-      Object.values(this.players).forEach((p, idx) => {
-        p.x = W / 2 + (idx * 44 - 66);
-        p.y = H - 130;
-        p.vx = 0;
-        p.vy = 0;
-        p.isAlive = true;
-        p.isDashing = false;
-        p.reviveProgress = 0;
-        p.invulnerableUntil = Date.now() + 2500;
-      });
 
       const roomData = await this.director.getRoomData(index, this.totalRooms);
       this.currentMutation = {
@@ -443,8 +449,8 @@ export class DungeonRoom {
       };
       this.chestRelics = roomData.relics;
 
-      // 1. Setup Labyrinth Walls, Secret Chamber & Co-op Runic Seals
-      this.generateLabyrinthLayout(index, isBoss, this.encounterType);
+      // 1. Setup Macro-Dungeon multi-rooms, corridors, walls, traps & co-op puzzles
+      this.generateMacroDungeon(index, isBoss, this.encounterType);
 
       // 2. Setup Physical Gothic Stone Pillars
       this.pillars = isBoss
@@ -455,34 +461,35 @@ export class DungeonRoom {
             { id: 'pil_4', x: W * 0.76, y: H * 0.7, radius: 26 },
           ]
         : [
-            { id: 'pil_1', x: W * 0.2, y: H * 0.26, radius: 25 },
-            { id: 'pil_2', x: W * 0.8, y: H * 0.26, radius: 25 },
-            { id: 'pil_3', x: W * 0.2, y: H * 0.74, radius: 25 },
-            { id: 'pil_4', x: W * 0.8, y: H * 0.74, radius: 25 },
-            { id: 'pil_5', x: W * 0.38, y: H * 0.5, radius: 22 },
-            { id: 'pil_6', x: W * 0.62, y: H * 0.5, radius: 22 },
+            { id: 'pil_1', x: 1550, y: 1450, radius: 25 },
+            { id: 'pil_2', x: 1900, y: 1750, radius: 25 },
+            { id: 'pil_3', x: 2800, y: 1400, radius: 25 },
+            { id: 'pil_4', x: 3300, y: 1800, radius: 25 },
           ];
 
       // 3. Setup Interactive Barrels across sectors (Explosive, Frost, Toxic)
       this.barrels = [];
       const barrelTypes: Array<'EXPLOSIVE' | 'FROST' | 'TOXIC'> = ['EXPLOSIVE', 'FROST', 'TOXIC'];
-      const barrelPositions = [
-        { x: W * 0.33, y: H * 0.44 },
-        { x: W * 0.67, y: H * 0.44 },
-        { x: W * 0.5, y: H * 0.26 },
-        { x: W * 0.16, y: H * 0.52 },
-        { x: W * 0.84, y: H * 0.52 },
-      ];
+      const barrelPositions = isBoss
+        ? [
+            { x: W * 0.33, y: H * 0.44 },
+            { x: W * 0.67, y: H * 0.44 },
+            { x: W * 0.5, y: H * 0.26 },
+          ]
+        : [
+            { x: 1450, y: 1750 },
+            { x: 2000, y: 1350 },
+            { x: 2850, y: 1750 },
+            { x: 1550, y: 350 },
+          ];
       barrelPositions.forEach((pos, idx) => {
-        if (idx < 3 || Math.random() < 0.8) {
-          this.barrels.push({
-            id: `barrel_${index}_${idx}`,
-            x: pos.x + (Math.random() * 40 - 20),
-            y: pos.y + (Math.random() * 30 - 15),
-            radius: 18,
-            type: barrelTypes[(index + idx) % barrelTypes.length],
-          });
-        }
+        this.barrels.push({
+          id: `barrel_${index}_${idx}`,
+          x: pos.x + (Math.random() * 40 - 20),
+          y: pos.y + (Math.random() * 30 - 15),
+          radius: 18,
+          type: barrelTypes[(index + idx) % barrelTypes.length],
+        });
       });
 
       // 4. Setup Environmental Hazards based on Mutation
@@ -491,24 +498,13 @@ export class DungeonRoom {
       const hazType = this.currentMutation.hazardType;
       if (hazType === 'LAVA_PITS') {
         this.hazards.push(
-          { id: 'haz_1', type: 'LAVA', x: W * 0.34, y: H * 0.36, radius: 56, active: true, createdAt: now, durationMs: 999999, damage: 12 },
-          { id: 'haz_2', type: 'LAVA', x: W * 0.66, y: H * 0.36, radius: 56, active: true, createdAt: now, durationMs: 999999, damage: 12 },
-          { id: 'haz_3', type: 'LAVA', x: W * 0.5, y: H * 0.62, radius: 50, active: true, createdAt: now, durationMs: 999999, damage: 12 },
-          { id: 'haz_4', type: 'LAVA', x: W * 0.2, y: H * 0.52, radius: 48, active: true, createdAt: now, durationMs: 999999, damage: 12 },
-          { id: 'haz_5', type: 'LAVA', x: W * 0.8, y: H * 0.52, radius: 48, active: true, createdAt: now, durationMs: 999999, damage: 12 }
+          { id: 'haz_1', type: 'LAVA', x: 1650, y: 1550, radius: 56, active: true, createdAt: now, durationMs: 999999, damage: 12 },
+          { id: 'haz_2', type: 'LAVA', x: 1850, y: 1650, radius: 56, active: true, createdAt: now, durationMs: 999999, damage: 12 }
         );
       } else if (hazType === 'POISON_SPORES') {
         this.hazards.push(
-          { id: 'haz_1', type: 'POISON_CLOUD', x: W * 0.35, y: H * 0.48, radius: 60, active: true, createdAt: now, durationMs: 999999, damage: 9 },
-          { id: 'haz_2', type: 'POISON_CLOUD', x: W * 0.65, y: H * 0.48, radius: 60, active: true, createdAt: now, durationMs: 999999, damage: 9 },
-          { id: 'haz_3', type: 'POISON_CLOUD', x: W * 0.5, y: H * 0.28, radius: 54, active: true, createdAt: now, durationMs: 999999, damage: 9 }
-        );
-      } else if (hazType === 'SPIKE_TRAPS') {
-        this.hazards.push(
-          { id: 'spike_1', type: 'SPIKE_TRAP', x: W * 0.36, y: H * 0.36, radius: 38, active: false, createdAt: now, durationMs: 999999, damage: 18 },
-          { id: 'spike_2', type: 'SPIKE_TRAP', x: W * 0.64, y: H * 0.36, radius: 38, active: false, createdAt: now, durationMs: 999999, damage: 18 },
-          { id: 'spike_3', type: 'SPIKE_TRAP', x: W * 0.36, y: H * 0.64, radius: 38, active: false, createdAt: now, durationMs: 999999, damage: 18 },
-          { id: 'spike_4', type: 'SPIKE_TRAP', x: W * 0.64, y: H * 0.64, radius: 38, active: false, createdAt: now, durationMs: 999999, damage: 18 }
+          { id: 'haz_1', type: 'POISON_CLOUD', x: 1700, y: 1500, radius: 60, active: true, createdAt: now, durationMs: 999999, damage: 9 },
+          { id: 'haz_2', type: 'POISON_CLOUD', x: 3050, y: 1450, radius: 60, active: true, createdAt: now, durationMs: 999999, damage: 9 }
         );
       }
 
@@ -518,25 +514,32 @@ export class DungeonRoom {
 
       // 5. Setup Altar of Pacts & Armory
       const discount = this.encounterType === 'SANCTUARY' ? 0.65 : 1.0;
+      const altarX = this.macroRooms.length > 1 ? 3055 : W * 0.34;
+      const altarY = this.macroRooms.length > 1 ? 1625 : H * 0.52;
       this.altar = {
-        x: W * 0.34,
-        y: H * 0.52,
+        x: altarX,
+        y: altarY,
         pact: roomData.pact,
         weaponUpgradeCost: Math.round((35 + index * 15) * discount),
         healCost: Math.round(25 * discount),
         shieldCost: Math.round(30 * discount),
       };
 
-      // 6. Reposition & Heal Players (Sanctuary gives +60% heal, normal gives +35%)
+      // 6. Reposition & Heal Players in Spawn Room
+      const spawnRoom = this.macroRooms.find(r => r.type === 'SPAWN') || this.macroRooms[0];
+      const spawnCenterX = spawnRoom ? spawnRoom.x + spawnRoom.width / 2 : W / 2;
+      const spawnCenterY = spawnRoom ? spawnRoom.y + spawnRoom.height / 2 : H - 240;
+
       const healRatio = this.encounterType === 'SANCTUARY' ? 0.6 : 0.35;
       Object.values(this.players).forEach((p, idx) => {
-        p.x = W / 2 + (idx * 44 - 66);
-        p.y = H - 130;
+        p.x = spawnCenterX + (idx * 44 - 66);
+        p.y = spawnCenterY;
         p.vx = 0;
         p.vy = 0;
         p.isAlive = true;
         p.isDashing = false;
         p.reviveProgress = 0;
+        p.currentMacroRoomId = spawnRoom?.id;
         p.invulnerableUntil = Date.now() + 2000;
         p.currentHp = Math.min(p.maxHp, p.currentHp + Math.floor(p.maxHp * healRatio));
         if (this.encounterType === 'SANCTUARY') {
@@ -574,122 +577,304 @@ export class DungeonRoom {
   }
 
   /**
-   * Generates interior Labyrinth stone walls, a Cracked Secret Wall leading to a hidden vault,
-   * and Co-op Runic Synchronization Seals linked to the Central Eye!
+   * Generates interconnected Macro-Dungeon floors with multiple rooms, corridors,
+   * active traps, co-op puzzles, and spatial dormancy architecture.
    */
-  private generateLabyrinthLayout(index: number, isBoss: boolean, encounterType: RoomEncounterType): void {
+  private generateMacroDungeon(index: number, isBoss: boolean, encounterType: RoomEncounterType): void {
     this.walls = [];
     this.seals = [];
-    if (isBoss) return;
+    this.macroRooms = [];
+    this.activeTraps = [];
+    this.puzzles = [];
+    this.pitchBlackUntil = 0;
+    this.sacrificeAltarActive = false;
+    this.sacrificeUsed = false;
+    this.runeBearerPlayerId = null;
 
     const W = this.roomWidth;
     const H = this.roomHeight;
-    const layoutVariant = index % 3;
 
-    if (encounterType !== 'SANCTUARY') {
-      if (layoutVariant === 1) {
-        // Variant 1: Twin Wing Bastions + North/South Choke Barriers
-        this.walls.push(
-          { id: `w_${index}_1`, x: Math.round(W * 0.28), y: Math.round(H * 0.24), width: 38, height: Math.round(H * 0.22) },
-          { id: `w_${index}_2`, x: Math.round(W * 0.28), y: Math.round(H * 0.56), width: 38, height: Math.round(H * 0.21) },
-          { id: `w_${index}_3`, x: Math.round(W * 0.72) - 38, y: Math.round(H * 0.24), width: 38, height: Math.round(H * 0.22) },
-          { id: `w_${index}_4`, x: Math.round(W * 0.72) - 38, y: Math.round(H * 0.56), width: 38, height: Math.round(H * 0.21) },
-          { id: `w_${index}_5`, x: Math.round(W * 0.41), y: Math.round(H * 0.23), width: Math.round(W * 0.18), height: 36 },
-          { id: `w_${index}_6`, x: Math.round(W * 0.41), y: Math.round(H * 0.74), width: Math.round(W * 0.18), height: 36 }
-        );
-      } else if (layoutVariant === 2) {
-        // Variant 2: Cross Labyrinth Corridors with Central Ritual Courtyard
-        this.walls.push(
-          { id: `w_${index}_1`, x: Math.round(W * 0.15), y: Math.round(H * 0.36), width: Math.round(W * 0.21), height: 36 },
-          { id: `w_${index}_2`, x: Math.round(W * 0.64), y: Math.round(H * 0.36), width: Math.round(W * 0.21), height: 36 },
-          { id: `w_${index}_3`, x: Math.round(W * 0.15), y: Math.round(H * 0.64), width: Math.round(W * 0.21), height: 36 },
-          { id: `w_${index}_4`, x: Math.round(W * 0.64), y: Math.round(H * 0.64), width: Math.round(W * 0.21), height: 36 },
-          { id: `w_${index}_5`, x: Math.round(W * 0.34), y: Math.round(H * 0.16), width: 36, height: Math.round(H * 0.16) },
-          { id: `w_${index}_6`, x: Math.round(W * 0.66) - 36, y: Math.round(H * 0.16), width: 36, height: Math.round(H * 0.16) }
-        );
-      } else {
-        // Variant 0: Fortress Zig-Zag Chambers
-        this.walls.push(
-          { id: `w_${index}_1`, x: Math.round(W * 0.25), y: Math.round(H * 0.32), width: Math.round(W * 0.16), height: 36 },
-          { id: `w_${index}_2`, x: Math.round(W * 0.59), y: Math.round(H * 0.32), width: Math.round(W * 0.16), height: 36 },
-          { id: `w_${index}_3`, x: Math.round(W * 0.25), y: Math.round(H * 0.66), width: Math.round(W * 0.16), height: 36 },
-          { id: `w_${index}_4`, x: Math.round(W * 0.59), y: Math.round(H * 0.66), width: Math.round(W * 0.16), height: 36 },
-          { id: `w_${index}_5`, x: Math.round(W * 0.25), y: Math.round(H * 0.32), width: 36, height: Math.round(H * 0.18) },
-          { id: `w_${index}_6`, x: Math.round(W * 0.75) - 36, y: Math.round(H * 0.5), width: 36, height: Math.round(H * 0.18) }
-        );
-      }
-
-      // Secret Room (Sala Oculta) in Top-Left or Top-Right corner behind a destructible runic wall!
-      const secretOnRight = index % 2 === 0;
-      if (secretOnRight) {
-        // Top-Right Secret Vault (x: W - 360 .. W - 40, y: 40 .. 330)
-        this.walls.push(
-          { id: `sec_solid_${index}`, x: W - 360, y: 42, width: 36, height: 155 },
-          {
-            id: `sec_door_${index}`,
-            x: W - 360,
-            y: 197,
-            width: 36,
-            height: 135,
-            isSecretWall: true,
-            hp: 65,
-            maxHp: 65,
-            isOpen: false,
-          },
-          { id: `sec_bot_${index}`, x: W - 360, y: 332, width: 318, height: 36 }
-        );
-      } else {
-        // Top-Left Secret Vault (x: 40 .. 360, y: 40 .. 330)
-        this.walls.push(
-          { id: `sec_solid_${index}`, x: 324, y: 42, width: 36, height: 155 },
-          {
-            id: `sec_door_${index}`,
-            x: 324,
-            y: 197,
-            width: 36,
-            height: 135,
-            isSecretWall: true,
-            hp: 65,
-            maxHp: 65,
-            isOpen: false,
-          },
-          { id: `sec_bot_${index}`, x: 42, y: 332, width: 318, height: 36 }
-        );
-      }
-
-      // Co-op Runic Synchronization Seals (linked to the Central Eye)
-      this.seals = [
+    if (isBoss) {
+      // Single Grand Colosseum for Boss Battle
+      this.macroRooms = [
         {
-          id: `seal_${index}_L`,
-          x: Math.round(W * 0.17),
-          y: Math.round(H * 0.5),
-          radius: 52,
-          progress: 0,
-          isActivated: false,
-          label: 'SELLO OESTE',
-        },
-        {
-          id: `seal_${index}_R`,
-          x: Math.round(W * 0.83),
-          y: Math.round(H * 0.5),
-          radius: 52,
-          progress: 0,
-          isActivated: false,
-          label: 'SELLO ESTE',
+          id: 'room_boss',
+          roomIndex: 0,
+          x: 120,
+          y: 120,
+          width: W - 240,
+          height: H - 240,
+          type: 'BOSS',
+          title: 'Arena del Coloso Corrupto',
+          isCleared: false,
+          isLocked: true,
+          isDiscovered: true,
         },
       ];
 
-      if (index >= 4) {
-        this.seals.push({
-          id: `seal_${index}_N`,
-          x: Math.round(W * 0.5),
-          y: Math.round(H * 0.16),
-          radius: 52,
-          progress: 0,
-          isActivated: false,
-          label: 'SELLO NORTE',
-        });
-      }
+      // Perimeter walls
+      this.walls.push(
+        { id: 'w_boss_top', x: 120, y: 120, width: W - 240, height: 36 },
+        { id: 'w_boss_bot', x: 120, y: H - 156, width: W - 240, height: 36 },
+        { id: 'w_boss_left', x: 120, y: 120, width: 36, height: H - 240 },
+        { id: 'w_boss_right', x: W - 156, y: 120, width: 36, height: H - 240 }
+      );
+
+      this.seals = [
+        { id: `seal_${index}_1`, x: W * 0.28, y: H * 0.5, radius: 52, progress: 0, isActivated: false, label: 'SELLO OESTE' },
+        { id: `seal_${index}_2`, x: W * 0.72, y: H * 0.5, radius: 52, progress: 0, isActivated: false, label: 'SELLO ESTE' },
+      ];
+
+      this.activeTraps.push(
+        { id: 'trap_boss_1', type: 'FIRE_GRATE', x: W * 0.35, y: H * 0.35, width: 80, height: 80, periodMs: 3200, offsetMs: 0, damage: 18 },
+        { id: 'trap_boss_2', type: 'FIRE_GRATE', x: W * 0.65, y: H * 0.65, width: 80, height: 80, periodMs: 3200, offsetMs: 1600, damage: 18 }
+      );
+      return;
+    }
+
+    // Standard & Elite Macro-Dungeon: 4 Connected Rooms + Corridors + Traps + Puzzles
+    this.macroRooms = [
+      {
+        id: 'room_0',
+        roomIndex: 0,
+        x: 120,
+        y: 1250,
+        width: 750,
+        height: 750,
+        type: 'SPAWN',
+        title: 'Vestíbulo del Despertar',
+        isCleared: true,
+        isLocked: false,
+        isDiscovered: true,
+      },
+      {
+        id: 'room_1',
+        roomIndex: 1,
+        x: 1250,
+        y: 1150,
+        width: 950,
+        height: 950,
+        type: 'COMBAT',
+        title: 'Patio de Armas Profanado',
+        isCleared: false,
+        isLocked: false,
+        isDiscovered: false,
+      },
+      {
+        id: 'room_2',
+        roomIndex: 2,
+        x: 1200,
+        y: 140,
+        width: 1050,
+        height: 580,
+        type: 'PUZZLE',
+        title: 'Cámara de Runas Arcanas',
+        isCleared: false,
+        isLocked: false,
+        isDiscovered: false,
+      },
+      {
+        id: 'room_3',
+        roomIndex: 3,
+        x: 2580,
+        y: 1150,
+        width: 950,
+        height: 950,
+        type: encounterType === 'SANCTUARY' ? 'SANCTUARY' : 'COMBAT',
+        title: 'Santuario del Portal Dimensional',
+        isCleared: false,
+        isLocked: false,
+        isDiscovered: false,
+      },
+    ];
+
+    // Room 0 (Vestíbulo) Walls
+    this.walls.push(
+      { id: 'w_r0_top', x: 120, y: 1250, width: 750, height: 35 },
+      { id: 'w_r0_bot', x: 120, y: 1965, width: 750, height: 35 },
+      { id: 'w_r0_left', x: 120, y: 1250, width: 35, height: 750 },
+      { id: 'w_r0_r_top', x: 835, y: 1250, width: 35, height: 250 },
+      { id: 'w_r0_r_bot', x: 835, y: 1750, width: 35, height: 250 }
+    );
+
+    // Corridor 0-1 (Vestíbulo -> Patio)
+    this.walls.push(
+      { id: 'w_c01_top', x: 870, y: 1465, width: 380, height: 35 },
+      { id: 'w_c01_bot', x: 870, y: 1750, width: 380, height: 35 },
+      { id: 'gate_0_1', x: 1245, y: 1500, width: 22, height: 250, isOpen: true }
+    );
+
+    // Room 1 (Patio de Armas) Walls
+    this.walls.push(
+      { id: 'w_r1_l_top', x: 1250, y: 1150, width: 35, height: 350 },
+      { id: 'w_r1_l_bot', x: 1250, y: 1750, width: 35, height: 350 },
+      { id: 'w_r1_bot', x: 1250, y: 2065, width: 950, height: 35 },
+      { id: 'w_r1_t_left', x: 1250, y: 1150, width: 375, height: 35 },
+      { id: 'w_r1_t_right', x: 1845, y: 1150, width: 355, height: 35 },
+      { id: 'w_r1_r_top', x: 2165, y: 1150, width: 35, height: 350 },
+      { id: 'w_r1_r_bot', x: 2165, y: 1750, width: 35, height: 350 },
+      { id: 'gate_1_2', x: 1625, y: 1145, width: 220, height: 22, isOpen: true },
+      { id: 'gate_1_3', x: 2195, y: 1500, width: 22, height: 250, isOpen: true }
+    );
+
+    // Corridor 1-2 (Patio -> Puzzle North)
+    this.walls.push(
+      { id: 'w_c12_left', x: 1595, y: 720, width: 35, height: 430 },
+      { id: 'w_c12_right', x: 1845, y: 720, width: 35, height: 430 }
+    );
+
+    // Room 2 (Puzzle Chamber) Walls
+    this.walls.push(
+      { id: 'w_r2_left', x: 1200, y: 140, width: 35, height: 580 },
+      { id: 'w_r2_right', x: 2215, y: 140, width: 35, height: 580 },
+      { id: 'w_r2_top_l', x: 1200, y: 140, width: 475, height: 35 },
+      {
+        id: `sec_door_${index}`,
+        x: 1675,
+        y: 140,
+        width: 100,
+        height: 35,
+        isSecretWall: true,
+        hp: 60,
+        maxHp: 60,
+        isOpen: false,
+      },
+      { id: 'w_r2_top_r', x: 1775, y: 140, width: 475, height: 35 },
+      { id: 'w_r2_b_left', x: 1200, y: 685, width: 425, height: 35 },
+      { id: 'w_r2_b_right', x: 1845, y: 685, width: 405, height: 35 }
+    );
+
+    // Corridor 1-3 (Patio -> Sanctuary East)
+    this.walls.push(
+      { id: 'w_c13_top', x: 2200, y: 1465, width: 380, height: 35 },
+      { id: 'w_c13_bot', x: 2200, y: 1750, width: 380, height: 35 }
+    );
+
+    // Room 3 (Portal Sanctuary) Walls
+    this.walls.push(
+      { id: 'w_r3_top', x: 2580, y: 1150, width: 950, height: 35 },
+      { id: 'w_r3_bot', x: 2580, y: 2065, width: 950, height: 35 },
+      { id: 'w_r3_right', x: 3495, y: 1150, width: 35, height: 950 },
+      { id: 'w_r3_l_top', x: 2580, y: 1150, width: 35, height: 350 },
+      { id: 'w_r3_l_bot', x: 2580, y: 1750, width: 35, height: 350 }
+    );
+
+    // Traps: Deterministic Oscillating Pendulums, Fire Ember Grates, and Wall Gargoyles
+    this.activeTraps = [
+      {
+        id: 'pend_0_1',
+        type: 'PENDULUM',
+        x: 1060,
+        y: 1465,
+        width: 32,
+        height: 32,
+        periodMs: 2400,
+        offsetMs: 0,
+        damage: 26,
+        armLength: 140,
+        maxAngleRad: 1.15,
+      },
+      {
+        id: 'fg_1_1',
+        type: 'FIRE_GRATE',
+        x: 1450,
+        y: 1350,
+        width: 80,
+        height: 80,
+        periodMs: 3200,
+        offsetMs: 0,
+        damage: 18,
+      },
+      {
+        id: 'fg_1_2',
+        type: 'FIRE_GRATE',
+        x: 1950,
+        y: 1850,
+        width: 80,
+        height: 80,
+        periodMs: 3200,
+        offsetMs: 1600,
+        damage: 18,
+      },
+      {
+        id: 'dart_1_2',
+        type: 'DART_LAUNCHER',
+        x: 1600,
+        y: 935,
+        width: 30,
+        height: 30,
+        facing: 'EAST',
+        shootIntervalMs: 2600,
+        periodMs: 2600,
+        offsetMs: 0,
+        damage: 16,
+      },
+      {
+        id: 'pend_1_3',
+        type: 'PENDULUM',
+        x: 2390,
+        y: 1465,
+        width: 32,
+        height: 32,
+        periodMs: 2200,
+        offsetMs: 600,
+        damage: 26,
+        armLength: 140,
+        maxAngleRad: 1.15,
+      },
+      {
+        id: 'fg_1_3',
+        type: 'FIRE_GRATE',
+        x: 2460,
+        y: 1585,
+        width: 80,
+        height: 80,
+        periodMs: 3200,
+        offsetMs: 1200,
+        damage: 18,
+      },
+    ];
+
+    // Co-op Puzzles in Room 2 (Cámara de Runas Arcanas)
+    if (index % 2 === 1) {
+      this.puzzles = [
+        {
+          id: `puz_${index}`,
+          roomId: 'room_2',
+          type: 'RUNIC_SEQUENCE',
+          isSolved: false,
+          rewardClaimed: false,
+          sequence: ['plate_1', 'plate_2', 'plate_3'],
+          currentSequenceIdx: 0,
+          hintText: 'Pisa las runas ancestrales en el orden sagrado: Violeta ➔ Celeste ➔ Dorado',
+          plates: [
+            { id: 'plate_1', x: 1420, y: 430, radius: 42, color: '#a855f7', symbol: 'ᚱ', isPressed: false },
+            { id: 'plate_2', x: 1725, y: 300, radius: 42, color: '#38bdf8', symbol: 'ᚦ', isPressed: false },
+            { id: 'plate_3', x: 2030, y: 430, radius: 42, color: '#eab308', symbol: 'ᛟ', isPressed: false },
+          ],
+          torches: [
+            { id: 'torch_puz_1', x: 1350, y: 260, lit: true, litUntil: Infinity },
+            { id: 'torch_puz_2', x: 2100, y: 260, lit: true, litUntil: Infinity },
+          ],
+        },
+      ];
+    } else {
+      this.puzzles = [
+        {
+          id: `puz_${index}`,
+          roomId: 'room_2',
+          type: 'TORCH_GAUNTLET',
+          isSolved: false,
+          rewardClaimed: false,
+          plates: [],
+          hintText: 'Golpea los 3 braseros rúnicos al unísono antes de que se extingan (12s)',
+          torches: [
+            { id: 'torch_1', x: 1350, y: 260, lit: false, litUntil: 0 },
+            { id: 'torch_2', x: 2100, y: 260, lit: false, litUntil: 0 },
+            { id: 'torch_3', x: 1725, y: 520, lit: false, litUntil: 0 },
+          ],
+        },
+      ];
     }
   }
 
@@ -1334,6 +1519,48 @@ export class DungeonRoom {
       const startX = player.x + Math.cos(finalAngle) * 28;
       const startY = player.y + Math.sin(finalAngle) * 28;
 
+      let finalRadius = radius;
+      let finalColor = color;
+      let isExplosive = player.classType === 'MAGO';
+      let explosionRadius = player.classType === 'MAGO' ? 75 : 0;
+      let piercesRemaining = player.classType === 'PICARO' ? 1 : 0;
+      let chainLightning = stats.chainLightning;
+
+      if (player.weaponEvolution === 'GUERRERO_METEORO') {
+        finalRadius = 34;
+        finalColor = '#f97316';
+        element = 'FIRE';
+        isExplosive = true;
+        explosionRadius = 80;
+      } else if (player.weaponEvolution === 'GUERRERO_ESPINAS') {
+        finalRadius = 28;
+        finalColor = '#dc2626';
+      } else if (player.weaponEvolution === 'CAZADOR_GATLING') {
+        piercesRemaining = 99;
+        finalColor = '#38bdf8';
+      } else if (player.weaponEvolution === 'CAZADOR_RELAMPAGO') {
+        element = 'LIGHTNING';
+        chainLightning = true;
+        finalColor = '#facc15';
+      } else if (player.weaponEvolution === 'MAGO_TORMENTA') {
+        element = 'LIGHTNING';
+        chainLightning = true;
+        finalRadius = 18;
+        finalColor = '#c084fc';
+      } else if (player.weaponEvolution === 'MAGO_FENIX') {
+        element = 'FIRE';
+        isExplosive = true;
+        explosionRadius = 115;
+        finalColor = '#ea580c';
+      } else if (player.weaponEvolution === 'PICARO_SOMBRAS') {
+        piercesRemaining = 99;
+        finalColor = '#a855f7';
+      } else if (player.weaponEvolution === 'PICARO_TRAMPERO') {
+        element = 'POISON';
+        piercesRemaining = 3;
+        finalColor = '#10b981';
+      }
+
       this.projectiles.push({
         id: `proj_${this.nextProjectileId++}`,
         ownerId: player.id,
@@ -1342,18 +1569,18 @@ export class DungeonRoom {
         y: startY + pVy * advanceSec,
         vx: pVx,
         vy: pVy,
-        radius,
+        radius: finalRadius,
         damage: Math.round(stats.attackDamage * this.currentMutation.playerDamageMultiplier * critMult),
-        color,
+        color: finalColor,
         bouncesRemaining: stats.bulletBounces + this.currentMutation.bulletBouncesBonus,
-        piercesRemaining: player.classType === 'PICARO' ? 1 : 0,
+        piercesRemaining,
         createdAt: now,
         lifetimeMs: Math.max(100, stats.bulletLifetimeMs - pingDelay),
-        isExplosive: player.classType === 'MAGO',
-        explosionRadius: player.classType === 'MAGO' ? 75 : 0,
+        isExplosive,
+        explosionRadius,
         isCrit,
         element,
-        chainLightning: stats.chainLightning,
+        chainLightning,
       });
     }
   }
@@ -1362,10 +1589,21 @@ export class DungeonRoom {
     const player = this.players[socketId];
     if (!player || this.chestClaimedBy.includes(socketId)) return;
 
-    const relic = this.chestRelics.find(r => r.id === relicId);
+    const relic =
+      this.chestRelics.find(r => r.id === relicId) ||
+      this.puzzleChest?.relicOptions.find(r => r.id === relicId);
     if (relic) {
       player.relics.push(relic);
       this.chestClaimedBy.push(socketId);
+      if (this.puzzleChest) {
+        if (!this.puzzleChest.claimedByPlayerIds.includes(socketId)) {
+          this.puzzleChest.claimedByPlayerIds.push(socketId);
+        }
+        const humanIds = Object.values(this.players).filter(p => !p.isBot).map(p => p.id);
+        if (humanIds.every(id => this.puzzleChest?.claimedByPlayerIds.includes(id))) {
+          this.puzzleChest.isOpen = true;
+        }
+      }
       if (relic.modifiers.maxHpBonus) {
         player.maxHp += relic.modifiers.maxHpBonus;
         player.currentHp = Math.min(player.maxHp, player.currentHp + relic.modifiers.maxHpBonus);
@@ -1396,6 +1634,9 @@ export class DungeonRoom {
       player.gold -= this.altar.weaponUpgradeCost;
       player.weaponLevel += 1;
       this.altar.weaponUpgradeCost = Math.round(this.altar.weaponUpgradeCost * 1.35);
+      if (player.weaponLevel >= 3 && !player.weaponEvolution) {
+        player.pendingEvolutionChoice = true;
+      }
       this.emitFX({
         type: 'SHOCKWAVE',
         x: player.x,
@@ -1513,6 +1754,10 @@ export class DungeonRoom {
     const prevSecret = this.secretFound;
 
     this.updateAIHerbBots(dt, now);
+    this.tickSpatialMacroRooms(now);
+    this.tickTraps(dt, now);
+    this.tickPuzzles(dt, now);
+    this.tickDirectorLiveEvents(now);
     this.updateHazards(dt, now);
     this.updateSyncSeals(dt, now);
     this.updatePlayers(dt, now);
@@ -2168,10 +2413,28 @@ export class DungeonRoom {
       const isCleared = this.isRoomCleared();
       const doors = this.computeDoors(isCleared);
 
-      if (p.y <= pad + 10 && isCleared && doors.NORTH.open && Math.abs(p.x - W / 2) < 82) {
-        this.advanceToNextRoom(doors.NORTH.encounterType || 'STANDARD');
-        return;
+      const inDoor = (door: DoorState) =>
+        door.open &&
+        p.x >= door.x - 30 &&
+        p.x <= door.x + door.width + 30 &&
+        p.y >= door.y - 30 &&
+        p.y <= door.y + door.height + 30;
+
+      if (isCleared) {
+        if (inDoor(doors.NORTH)) {
+          this.advanceToNextRoom(doors.NORTH.encounterType || 'STANDARD');
+          return;
+        }
+        if (inDoor(doors.EAST)) {
+          this.advanceToNextRoom(doors.EAST.encounterType || 'ELITE');
+          return;
+        }
+        if (inDoor(doors.WEST)) {
+          this.advanceToNextRoom(doors.WEST.encounterType || 'SANCTUARY');
+          return;
+        }
       }
+
       if (p.y < pad) {
         p.y = pad;
         p.vy = 0;
@@ -2180,17 +2443,9 @@ export class DungeonRoom {
         p.y = H - pad;
         p.vy = 0;
       }
-      if (p.x <= pad + 10 && isCleared && doors.WEST.open && Math.abs(p.y - H / 2) < 82) {
-        this.advanceToNextRoom(doors.WEST.encounterType || 'SANCTUARY');
-        return;
-      }
       if (p.x < pad) {
         p.x = pad;
         p.vx = 0;
-      }
-      if (p.x >= W - pad - 10 && isCleared && doors.EAST.open && Math.abs(p.y - H / 2) < 82) {
-        this.advanceToNextRoom(doors.EAST.encounterType || 'ELITE');
-        return;
       }
       if (p.x > W - pad) {
         p.x = W - pad;
@@ -2206,6 +2461,13 @@ export class DungeonRoom {
     const activeDecoy = this.hazards.find(h => h.type === 'DECOY_BOMB');
 
     this.enemies.forEach(e => {
+      // Spatial hibernation for Render 0.1 CPU efficiency
+      if (e.isDormant) {
+        e.vx = 0;
+        e.vy = 0;
+        return;
+      }
+
       // Stunned enemies cannot act!
       if (e.stunUntil && now < e.stunUntil) {
         e.vx *= 0.5;
@@ -2218,13 +2480,19 @@ export class DungeonRoom {
       const chillMult = e.chillUntil && now < e.chillUntil ? 0.52 : 1.0;
       const effSpeed = e.speed * chillMult;
 
-      // Target decoy bomb if active, otherwise closest visible player
+      // Target Rune Bearer if active, else decoy bomb, else closest visible player
       let targetX = alivePlayers[0].x;
       let targetY = alivePlayers[0].y;
       let closestPlayer = alivePlayers[0];
       let minDist = Infinity;
 
-      if (activeDecoy && !e.isBoss) {
+      if (this.runeBearerPlayerId && this.players[this.runeBearerPlayerId]?.isAlive) {
+        const rb = this.players[this.runeBearerPlayerId];
+        closestPlayer = rb;
+        targetX = rb.x;
+        targetY = rb.y;
+        minDist = Math.hypot(targetX - e.x, targetY - e.y);
+      } else if (activeDecoy && !e.isBoss) {
         targetX = activeDecoy.x;
         targetY = activeDecoy.y;
         minDist = Math.hypot(targetX - e.x, targetY - e.y);
@@ -3185,6 +3453,28 @@ export class DungeonRoom {
           }
         }
         if (hitBarrel) continue;
+
+        // 3b. Hit Timed Torches in Puzzle Chamber
+        if (this.puzzles.length > 0) {
+          for (const puz of this.puzzles) {
+            if (puz.isSolved || puz.type !== 'TORCH_GAUNTLET') continue;
+            for (const tc of puz.torches) {
+              if (Math.hypot(tc.x - p.x, tc.y - p.y) < 36) {
+                if (!tc.lit) {
+                  tc.lit = true;
+                  tc.litUntil = now + 12000;
+                  this.emitFX({
+                    type: 'PING',
+                    x: tc.x,
+                    y: tc.y,
+                    text: '🔥 ¡BRASERO ENCENDIDO (12s)!',
+                    color: '#f97316',
+                  });
+                }
+              }
+            }
+          }
+        }
       }
 
       // 4. Hit Player (with Guerrero Reflective Bulwark check!)
@@ -3351,19 +3641,79 @@ export class DungeonRoom {
       finalDamage = Math.max(1, Math.round(finalDamage * 0.12));
     }
 
-    // Check Cross-Elemental Co-op Synergy!
+    // Check Combined Elemental Reactions!
     const wasBurning = e.burnUntil && now < e.burnUntil;
     const wasPoisoned = e.poisonUntil && now < e.poisonUntil;
     const wasChilled = e.chillUntil && now < e.chillUntil;
 
-    let synergyTriggered = false;
-    if (
+    // 1. Poison + Fire => NOXIOUS COMBUSTION (Explosive toxic fire detonation)
+    if ((element === 'FIRE' && wasPoisoned) || (element === 'POISON' && wasBurning)) {
+      finalDamage = Math.round(finalDamage * 1.9);
+      e.burnUntil = 0;
+      e.poisonUntil = 0;
+      this.telemetry.synergiesCount++;
+      if (owner) owner.synergiesTriggered++;
+
+      for (let oi = this.enemies.length - 1; oi >= 0; oi--) {
+        const other = this.enemies[oi];
+        if (other.id !== e.id && Math.hypot(other.x - e.x, other.y - e.y) <= 130) {
+          this.applyDamageToEnemy(other, oi, Math.round(finalDamage * 0.6), owner, false, 'FIRE', now, false);
+        }
+      }
+
+      this.emitFX({
+        type: 'ELEMENTAL_COMBO',
+        comboType: 'NOXIOUS_COMBUSTION',
+        x: e.x,
+        y: e.y,
+        radius: 130,
+        text: '💥 ¡COMBUSTIÓN TÓXICA!',
+        color: '#f97316',
+      });
+    }
+    // 2. Ice + Lightning => SHATTER SUPERCONDUCT (Armor shatter & freeze stun)
+    else if ((element === 'LIGHTNING' && wasChilled) || (element === 'ICE' && triggerChain)) {
+      finalDamage = Math.round(finalDamage * 1.65);
+      e.chillUntil = 0;
+      e.stunUntil = now + 1400;
+      this.telemetry.synergiesCount++;
+      if (owner) owner.synergiesTriggered++;
+
+      this.emitFX({
+        type: 'ELEMENTAL_COMBO',
+        comboType: 'SHATTER_SUPERCONDUCT',
+        x: e.x,
+        y: e.y,
+        radius: 110,
+        text: '⚡ ¡SUPERCONDUCTOR GÉLIDO!',
+        color: '#38bdf8',
+      });
+    }
+    // 3. Fire + Ice => FLASH MELT (Thermal shock critical burst)
+    else if ((element === 'FIRE' && wasChilled) || (element === 'ICE' && wasBurning)) {
+      finalDamage = Math.round(finalDamage * 2.4);
+      e.burnUntil = 0;
+      e.chillUntil = 0;
+      this.telemetry.synergiesCount++;
+      if (owner) owner.synergiesTriggered++;
+
+      this.emitFX({
+        type: 'ELEMENTAL_COMBO',
+        comboType: 'FLASH_MELT',
+        x: e.x,
+        y: e.y,
+        radius: 100,
+        text: '❄️🔥 ¡CHOQUE TÉRMICO!',
+        color: '#eab308',
+      });
+    }
+    // Standard Cross-Elemental Synergy Fallback
+    else if (
       (element === 'FIRE' && (wasPoisoned || wasChilled)) ||
       (element === 'POISON' && (wasBurning || wasChilled)) ||
       (element === 'ICE' && (wasBurning || wasPoisoned)) ||
       (element === 'LIGHTNING' && (wasChilled || wasBurning))
     ) {
-      synergyTriggered = true;
       finalDamage = Math.round(finalDamage * 1.55);
       e.burnUntil = 0;
       e.poisonUntil = 0;
@@ -3378,6 +3728,12 @@ export class DungeonRoom {
         radius: 95,
         color: '#c084fc',
       });
+    }
+
+    // Guerrero Sed de Espinas Weapon Evolution Lifesteal
+    if (owner && owner.weaponEvolution === 'GUERRERO_ESPINAS') {
+      const leech = Math.round(finalDamage * 0.18);
+      owner.currentHp = Math.min(owner.maxHp, owner.currentHp + leech);
     }
 
     // Apply new elemental status
@@ -3430,6 +3786,23 @@ export class DungeonRoom {
         if (stats.lifestealPct > 0) {
           owner.currentHp = Math.min(owner.maxHp, owner.currentHp + Math.max(4, Math.round(owner.maxHp * stats.lifestealPct * 0.4)));
         }
+      }
+
+      // If Rune Bearer event active: team heal + bonus gold!
+      if (this.runeBearerPlayerId) {
+        for (const p of Object.values(this.players)) {
+          if (p.isAlive) {
+            p.currentHp = Math.min(p.maxHp, p.currentHp + 12);
+            p.gold += 8;
+          }
+        }
+        this.emitFX({
+          type: 'PING',
+          x: e.x,
+          y: e.y,
+          text: '❤️ ¡SANACIÓN DE PRESA (+12 HP)!',
+          color: '#22c55e',
+        });
       }
 
       // Elite Explosivo or Kamikaze detonates on death
@@ -3738,9 +4111,62 @@ export class DungeonRoom {
   }
 
   private computeDoors(isCleared: boolean): Record<DoorDirection, DoorState> {
+    const nextIsBoss = (this.roomIndex + 1) % 3 === 0;
+
+    if (this.macroRooms.length > 1) {
+      // Standard / Elite Macro-Dungeon: Doors are placed in Room 3 (Portal Sanctuary)
+      const r3 = this.macroRooms.find(r => r.id === 'room_3') || this.macroRooms[this.macroRooms.length - 1];
+      const cx = r3.x + r3.width / 2; // ~3055
+      const cy = r3.y + r3.height / 2; // ~1625
+
+      return {
+        NORTH: {
+          direction: 'NORTH',
+          open: isCleared,
+          targetRoomIndex: this.roomIndex + 1,
+          encounterType: nextIsBoss ? 'BOSS' : 'STANDARD',
+          label: nextIsBoss ? '⚔️ BATALLA DE JEFE' : '⚔️ CÁMARA CENTRAL',
+          x: cx - 55,
+          y: r3.y + 10,
+          width: 110,
+          height: 40,
+        },
+        SOUTH: {
+          direction: 'SOUTH',
+          open: false,
+          targetRoomIndex: this.roomIndex - 1,
+          x: cx - 50,
+          y: r3.y + r3.height - 50,
+          width: 100,
+          height: 40,
+        },
+        EAST: {
+          direction: 'EAST',
+          open: isCleared && !nextIsBoss,
+          targetRoomIndex: this.roomIndex + 1,
+          encounterType: 'ELITE',
+          label: '💀 ÉLITE (2X BOTÍN)',
+          x: r3.x + r3.width - 50,
+          y: cy - 55,
+          width: 40,
+          height: 110,
+        },
+        WEST: {
+          direction: 'WEST',
+          open: isCleared && !nextIsBoss,
+          targetRoomIndex: this.roomIndex + 1,
+          encounterType: 'SANCTUARY',
+          label: '⚖️ SANTUARIO',
+          x: cx - 55,
+          y: r3.y + r3.height - 50,
+          width: 110,
+          height: 40,
+        },
+      };
+    }
+
     const W = this.roomWidth;
     const H = this.roomHeight;
-    const nextIsBoss = (this.roomIndex + 1) % 3 === 0;
 
     return {
       NORTH: {
@@ -3809,10 +4235,16 @@ export class DungeonRoom {
       isCleared,
       doors,
       chest:
-        isCleared && this.chestRelics.length > 0
+        this.puzzleChest
           ? {
-              x: W / 2,
-              y: H / 2,
+              ...this.puzzleChest,
+              isOpen: this.puzzleChest.isOpen || allHumansClaimed,
+              claimedByPlayerIds: this.chestClaimedBy,
+            }
+          : isCleared && this.chestRelics.length > 0
+          ? {
+              x: this.macroRooms.length > 1 ? 3055 : W / 2,
+              y: this.macroRooms.length > 1 ? 1625 : H / 2,
               isOpen: allHumansClaimed,
               claimedByPlayerIds: this.chestClaimedBy,
               relicOptions: this.chestRelics,
@@ -3825,6 +4257,15 @@ export class DungeonRoom {
       hazards: this.hazards,
       walls: this.walls,
       seals: this.seals,
+      macroRooms: this.macroRooms,
+      activeTraps: this.activeTraps,
+      puzzles: this.puzzles,
+      pitchBlackActive: Date.now() < this.pitchBlackUntil,
+      pitchBlackUntil: this.pitchBlackUntil,
+      sacrificeAltarActive: this.sacrificeAltarActive,
+      sacrificeAltarPos: this.sacrificeAltarActive ? { x: Math.round(W / 2), y: Math.round(H / 2) } : undefined,
+      sacrificeUsed: this.sacrificeUsed,
+      runeBearerPlayerId: this.runeBearerPlayerId || undefined,
       currentWave: this.currentWave,
       totalWaves: this.totalWaves,
       secretFound: this.secretFound,
@@ -3904,6 +4345,9 @@ export class DungeonRoom {
         weaponLevel: p.weaponLevel,
         combo: p.combo,
         maxCombo: p.maxCombo,
+        ...(p.weaponEvolution ? { weaponEvolution: p.weaponEvolution } : {}),
+        pendingEvolutionChoice: !!p.pendingEvolutionChoice,
+        isRuneBearer: !!p.isRuneBearer,
         ...(p.reviveProgress ? { reviveProgress: Math.round(p.reviveProgress * 100) / 100 } : {}),
         ...(typeof p.lastProcessedSeq === 'number' ? { seq: p.lastProcessedSeq } : {}),
         ...(typeof p.ping === 'number' ? { ping: p.ping } : {}),
@@ -3914,6 +4358,8 @@ export class DungeonRoom {
     const enemiesTick = this.enemies.map(e => ({
       id: e.id,
       type: e.type,
+      ...(e.macroRoomId ? { macroRoomId: e.macroRoomId } : {}),
+      ...(e.isDormant ? { isDormant: true } : {}),
       ...(e.isBoss
         ? {
             name: e.name,
@@ -3979,6 +4425,29 @@ export class DungeonRoom {
               .map(w => ({ id: w.id, hp: w.hp, isOpen: w.isOpen })),
           }
         : {}),
+      ...(this.puzzles.length > 0
+        ? {
+            pz: this.puzzles.map(pz => ({
+              id: pz.id,
+              isSolved: pz.isSolved,
+              plates: pz.plates.map(pl => ({ id: pl.id, isPressed: pl.isPressed })),
+              torches: pz.torches.map(tc => ({ id: tc.id, lit: tc.lit, litUntil: tc.litUntil })),
+            })),
+          }
+        : {}),
+      ...(this.macroRooms.length > 0
+        ? {
+            mr: this.macroRooms.map(r => ({
+              id: r.id,
+              isCleared: r.isCleared,
+              isLocked: r.isLocked,
+              isDiscovered: r.isDiscovered,
+            })),
+          }
+        : {}),
+      pb: Date.now() < this.pitchBlackUntil,
+      ...(this.runeBearerPlayerId ? { rb: this.runeBearerPlayerId } : {}),
+      sa: this.sacrificeAltarActive,
       p: playersTick,
       e: enemiesTick,
       pr: projectilesTick,
@@ -3995,6 +4464,431 @@ export class DungeonRoom {
     this.hazardsDirty = false;
 
     return tick;
+  }
+
+  public lockRoomGates(roomId: string, lock: boolean): void {
+    if (roomId === 'room_1') {
+      const g01 = this.walls.find(w => w.id === 'gate_0_1');
+      const g12 = this.walls.find(w => w.id === 'gate_1_2');
+      const g13 = this.walls.find(w => w.id === 'gate_1_3');
+      if (g01) g01.isOpen = !lock;
+      if (g12) g12.isOpen = !lock;
+      if (g13) g13.isOpen = !lock;
+      this.emitFX({
+        type: 'SHOCKWAVE',
+        x: 1725,
+        y: 1625,
+        radius: 140,
+        text: lock ? '⚔️ ¡SALA BLOQUEADA EN COMBATE!' : '🔓 ¡PUERTAS DESBLOQUEADAS!',
+        color: lock ? '#ef4444' : '#22c55e',
+      });
+    }
+  }
+
+  public tickSpatialMacroRooms(now: number): void {
+    if (this.macroRooms.length <= 1) return;
+
+    const activeRoomIds = new Set<string>();
+    const livingPlayers = Object.values(this.players).filter(p => p.isAlive);
+
+    for (const p of livingPlayers) {
+      for (const mr of this.macroRooms) {
+        if (
+          p.x >= mr.x - 30 &&
+          p.x <= mr.x + mr.width + 30 &&
+          p.y >= mr.y - 30 &&
+          p.y <= mr.y + mr.height + 30
+        ) {
+          activeRoomIds.add(mr.id);
+          p.currentMacroRoomId = mr.id;
+
+          if (!mr.isDiscovered) {
+            mr.isDiscovered = true;
+            this.emitFX({
+              type: 'PING',
+              x: mr.x + mr.width / 2,
+              y: mr.y + mr.height / 2,
+              text: `📍 ${mr.title.toUpperCase()}`,
+              color: '#38bdf8',
+            });
+          }
+
+          if (!mr.isCleared && mr.type === 'COMBAT' && !mr.isLocked) {
+            const aliveInRoom = this.enemies.filter(e => e.macroRoomId === mr.id && e.currentHp > 0);
+            if (aliveInRoom.length > 0) {
+              mr.isLocked = true;
+              this.lockRoomGates(mr.id, true);
+            }
+          }
+        }
+      }
+    }
+
+    // Update enemy dormancy: dormant if players are not in their room
+    for (const e of this.enemies) {
+      if (e.macroRoomId) {
+        e.isDormant = !activeRoomIds.has(e.macroRoomId);
+      }
+    }
+
+    // Check if locked combat room has been cleared
+    for (const mr of this.macroRooms) {
+      if (mr.isLocked && mr.type === 'COMBAT') {
+        const aliveInRoom = this.enemies.filter(e => e.macroRoomId === mr.id && e.currentHp > 0);
+        if (aliveInRoom.length === 0) {
+          mr.isCleared = true;
+          mr.isLocked = false;
+          this.lockRoomGates(mr.id, false);
+        }
+      }
+    }
+  }
+
+  public tickTraps(dt: number, now: number): void {
+    if (this.activeTraps.length === 0) return;
+
+    for (const trap of this.activeTraps) {
+      if (trap.type === 'PENDULUM') {
+        const phase = ((now + trap.offsetMs) % trap.periodMs) / trap.periodMs;
+        const angle = Math.sin(phase * Math.PI * 2) * (trap.maxAngleRad || 1.15);
+        const bladeX = trap.x + Math.sin(angle) * (trap.armLength || 140);
+        const bladeY = trap.y + Math.cos(angle) * (trap.armLength || 140);
+
+        for (const p of Object.values(this.players)) {
+          if (!p.isAlive || p.isDashing || now < p.invulnerableUntil) continue;
+          if (Math.hypot(p.x - bladeX, p.y - bladeY) < 38) {
+            this.damagePlayer(p, trap.damage);
+            this.emitFX({
+              type: 'TRAP_TRIGGER',
+              x: bladeX,
+              y: bladeY,
+              text: `-${trap.damage}`,
+              color: '#ef4444',
+            });
+          }
+        }
+      } else if (trap.type === 'FIRE_GRATE') {
+        const period = trap.periodMs || 3200;
+        const cycle = (now + trap.offsetMs) % period;
+        const isActive = cycle < 1200;
+        if (isActive) {
+          const hw = (trap.width || 80) / 2;
+          const hh = (trap.height || 80) / 2;
+          for (const p of Object.values(this.players)) {
+            if (!p.isAlive || p.isDashing || now < p.invulnerableUntil) continue;
+            if (
+              p.x >= trap.x - hw &&
+              p.x <= trap.x + hw &&
+              p.y >= trap.y - hh &&
+              p.y <= trap.y + hh
+            ) {
+              this.damagePlayer(p, Math.round(trap.damage * 0.45));
+              this.emitFX({
+                type: 'TRAP_TRIGGER',
+                x: p.x,
+                y: p.y,
+                text: '¡QUEMADURA!',
+                color: '#f97316',
+              });
+            }
+          }
+        }
+      } else if (trap.type === 'DART_LAUNCHER') {
+        const interval = trap.shootIntervalMs || 2600;
+        const phase = (now + trap.offsetMs) % interval;
+        if (phase < 55) {
+          const speed = 520;
+          let pVx = 0;
+          let pVy = 0;
+          if (trap.facing === 'EAST') pVx = speed;
+          else if (trap.facing === 'WEST') pVx = -speed;
+          else if (trap.facing === 'NORTH') pVy = -speed;
+          else pVy = speed;
+
+          this.projectiles.push({
+            id: `dart_${this.nextProjectileId++}`,
+            ownerId: 'trap',
+            fromPlayer: false,
+            x: trap.x + 15,
+            y: trap.y + 15,
+            vx: pVx,
+            vy: pVy,
+            radius: 7,
+            damage: trap.damage,
+            color: '#10b981',
+            bouncesRemaining: 0,
+            createdAt: now,
+            lifetimeMs: 1400,
+            element: 'POISON',
+          });
+        }
+      }
+    }
+  }
+
+  public tickPuzzles(dt: number, now: number): void {
+    if (this.puzzles.length === 0) return;
+
+    for (const puzzle of this.puzzles) {
+      if (puzzle.isSolved) continue;
+      if (puzzle.resetCooldownUntil && now < puzzle.resetCooldownUntil) continue;
+
+      if (puzzle.type === 'RUNIC_SEQUENCE') {
+        for (const plate of puzzle.plates) {
+          let standingPlayer: PlayerEntity | null = null;
+          for (const p of Object.values(this.players)) {
+            if (p.isAlive && Math.hypot(p.x - plate.x, p.y - plate.y) < plate.radius) {
+              standingPlayer = p;
+              break;
+            }
+          }
+
+          if (standingPlayer && !plate.isPressed) {
+            plate.isPressed = true;
+            plate.pressedBy = standingPlayer.id;
+
+            const expectedId = puzzle.sequence?.[puzzle.currentSequenceIdx || 0];
+            if (plate.id === expectedId) {
+              puzzle.currentSequenceIdx = (puzzle.currentSequenceIdx || 0) + 1;
+              this.emitFX({
+                type: 'PING',
+                x: plate.x,
+                y: plate.y,
+                text: `¡RUNA ACTIVADA! (${puzzle.currentSequenceIdx}/${puzzle.sequence?.length})`,
+                color: plate.color,
+              });
+
+              if (puzzle.currentSequenceIdx >= (puzzle.sequence?.length || 3)) {
+                this.solvePuzzle(puzzle);
+              }
+            } else {
+              puzzle.currentSequenceIdx = 0;
+              puzzle.resetCooldownUntil = now + 1400;
+              puzzle.plates.forEach(pl => {
+                pl.isPressed = false;
+                pl.pressedBy = undefined;
+              });
+              this.emitFX({
+                type: 'SHOCKWAVE',
+                x: plate.x,
+                y: plate.y,
+                radius: 70,
+                text: 'Secuencia Rúnica Reiniciada',
+                color: '#ef4444',
+              });
+            }
+          }
+        }
+      } else if (puzzle.type === 'TORCH_GAUNTLET') {
+        let allLit = true;
+        for (const torch of puzzle.torches) {
+          if (now >= torch.litUntil) {
+            torch.lit = false;
+          }
+          if (!torch.lit) allLit = false;
+
+          for (const p of Object.values(this.players)) {
+            if (p.isAlive && Math.hypot(p.x - torch.x, p.y - torch.y) < 55) {
+              if (!torch.lit) {
+                torch.lit = true;
+                torch.litUntil = now + 12000;
+                this.emitFX({
+                  type: 'PING',
+                  x: torch.x,
+                  y: torch.y,
+                  text: '🔥 ¡BRASERO ENCENDIDO (12s)!',
+                  color: '#f97316',
+                });
+              }
+            }
+          }
+        }
+        if (allLit && puzzle.torches.length > 0) {
+          this.solvePuzzle(puzzle);
+        }
+      }
+    }
+  }
+
+  private solvePuzzle(puzzle: CoopPuzzle): void {
+    puzzle.isSolved = true;
+    puzzle.solvedAt = Date.now();
+    const mr = this.macroRooms.find(r => r.id === puzzle.roomId);
+    if (mr) mr.isCleared = true;
+
+    // Spawn Grand Relic Vault Chest
+    const spawnX = puzzle.plates[1]?.x || 1725;
+    const spawnY = puzzle.plates[1]?.y || 300;
+    this.puzzleChest = {
+      x: spawnX,
+      y: spawnY,
+      isOpen: false,
+      claimedByPlayerIds: [],
+      relicOptions: this.chestRelics.slice(0, 3),
+    };
+    this.hearts.push(
+      { id: `h_puz_1`, type: 'GOLD', x: spawnX - 45, y: spawnY + 30, healAmount: 0, createdAt: Date.now() },
+      { id: `h_puz_2`, type: 'GOLD', x: spawnX + 45, y: spawnY + 30, healAmount: 0, createdAt: Date.now() },
+      { id: `h_puz_3`, type: 'SHIELD_ORB', x: spawnX, y: spawnY + 50, healAmount: 0, createdAt: Date.now() }
+    );
+    this.heartsDirty = true;
+
+    this.emitFX({
+      type: 'PUZZLE_SOLVED',
+      x: spawnX,
+      y: spawnY,
+      radius: 170,
+      text: '¡MISTERIO ANCESTRAL RESUELTO! COFRE LEGENDARIO DESBLOQUEADO',
+      color: '#eab308',
+    });
+  }
+
+  public tickDirectorLiveEvents(now: number): void {
+    // Check Rune Bearer expiration
+    if (this.runeBearerPlayerId) {
+      const p = this.players[this.runeBearerPlayerId];
+      if (!p || !p.isAlive || (p.runeBearerUntil && now >= p.runeBearerUntil)) {
+        if (p) {
+          p.isRuneBearer = false;
+          p.runeBearerUntil = undefined;
+        }
+        this.runeBearerPlayerId = null;
+      }
+    }
+
+    if (now - this.lastDirectorInterventionAt > 42000 && this.directorAnger >= 60 && this.encounterType !== 'BOSS') {
+      this.lastDirectorInterventionAt = now;
+      this.triggerDirectorLiveIntervention(now);
+    }
+  }
+
+  private triggerDirectorLiveIntervention(now: number): void {
+    const events: Array<'PITCH_BLACK' | 'SACRIFICE_DILEMMA' | 'RUNE_BEARER'> = [
+      'PITCH_BLACK',
+      'SACRIFICE_DILEMMA',
+      'RUNE_BEARER',
+    ];
+    const chosen = events[Math.floor(Math.random() * events.length)];
+
+    if (chosen === 'PITCH_BLACK') {
+      this.pitchBlackUntil = now + 24000;
+      this.directorAnger = Math.max(0, this.directorAnger - 40);
+      this.directorDialogue = {
+        speaker: 'DIRECTOR IA (MiniMax)',
+        text: '¿Creían que la luz les pertenecía? Apaguen las antorchas... a ver si sobreviven a ciegas.',
+        mood: 'CHAOTIC',
+        timestamp: now,
+      };
+      this.emitFX({
+        type: 'DIRECTOR_INTERVENTION',
+        x: this.roomWidth / 2,
+        y: this.roomHeight / 2,
+        radius: 300,
+        text: '🌑 APAGÓN DEL DIRECTOR: TINIEBLAS PROFUNDAS',
+        color: '#9333ea',
+      });
+    } else if (chosen === 'SACRIFICE_DILEMMA' && !this.sacrificeUsed) {
+      this.sacrificeAltarActive = true;
+      this.directorAnger = Math.max(0, this.directorAnger - 35);
+      this.directorDialogue = {
+        speaker: 'DIRECTOR IA (MiniMax)',
+        text: 'Un altar de sangre ha surgido. Que un voluntario ofrezca su vida para bendecir a su escuadrón.',
+        mood: 'MOCKING',
+        timestamp: now,
+      };
+      this.emitFX({
+        type: 'DIRECTOR_INTERVENTION',
+        x: this.roomWidth / 2,
+        y: this.roomHeight / 2,
+        radius: 200,
+        text: '🩸 ALTAR DEL SACRIFICIO COOPERATIVO',
+        color: '#e11d48',
+      });
+    } else if (chosen === 'RUNE_BEARER') {
+      const alivePlayers = Object.values(this.players).filter(p => p.isAlive);
+      if (alivePlayers.length > 0) {
+        const target = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
+        target.isRuneBearer = true;
+        target.runeBearerUntil = now + 25000;
+        this.runeBearerPlayerId = target.id;
+        this.directorAnger = Math.max(0, this.directorAnger - 40);
+        this.directorDialogue = {
+          speaker: 'DIRECTOR IA (MiniMax)',
+          text: `¡He marcado a ${target.name} con el Ojo del Abismo! Mis bestias lo cazarán sin piedad.`,
+          mood: 'ANGRY',
+          timestamp: now,
+        };
+        this.emitFX({
+          type: 'DIRECTOR_INTERVENTION',
+          x: target.x,
+          y: target.y,
+          radius: 180,
+          text: `👁️ MARCA DE LA PRESA: ${target.name}`,
+          color: '#ef4444',
+        });
+      }
+    }
+  }
+
+  public handleSacrificeInteract(socketId: string): boolean {
+    const player = this.players[socketId];
+    if (!player || !player.isAlive || !this.sacrificeAltarActive || this.sacrificeUsed) return false;
+
+    const cost = Math.round(player.maxHp * 0.3);
+    if (player.currentHp <= cost) return false;
+
+    player.currentHp -= cost;
+    this.sacrificeUsed = true;
+    this.sacrificeAltarActive = false;
+
+    for (const p of Object.values(this.players)) {
+      p.relics.push({
+        id: `pact_sacrifice_${Date.now()}`,
+        name: 'Pacto de Sangre Fraternal',
+        lore: `${player.name} ofreció su sangre al Director.`,
+        icon: '🩸',
+        rarity: 'LEGENDARY',
+        buffDescription: '+35% Daño de Ataque para todo el escuadrón',
+        modifiers: { damageMultiplier: 1.35 },
+      });
+    }
+
+    this.hearts.push(
+      { id: `h_sac_1`, type: 'GOLD', x: player.x - 35, y: player.y + 25, healAmount: 0, createdAt: Date.now() },
+      { id: `h_sac_2`, type: 'GOLD', x: player.x + 35, y: player.y + 25, healAmount: 0, createdAt: Date.now() },
+      { id: `h_sac_3`, type: 'FRENZY_ORB', x: player.x, y: player.y + 45, healAmount: 0, createdAt: Date.now() }
+    );
+    this.heartsDirty = true;
+
+    this.emitFX({
+      type: 'SHOCKWAVE',
+      x: player.x,
+      y: player.y,
+      radius: 180,
+      text: `🩸 ¡${player.name.toUpperCase()} HA PAGADO CON SANGRE! +35% DAÑO AL EQUIPO`,
+      color: '#e11d48',
+    });
+    this.broadcastState();
+    return true;
+  }
+
+  public handleChooseWeaponEvolution(socketId: string, evolutionId: WeaponEvolutionId): boolean {
+    const player = this.players[socketId];
+    if (!player || player.weaponEvolution) return false;
+    player.weaponEvolution = evolutionId;
+    player.pendingEvolutionChoice = false;
+
+    const evo = WEAPON_EVOLUTIONS[evolutionId];
+    this.emitFX({
+      type: 'EVOLUTION',
+      x: player.x,
+      y: player.y,
+      radius: 140,
+      text: `✨ ¡ARMA EVOLUCIONADA: ${evo ? evo.name.toUpperCase() : evolutionId}!`,
+      color: '#a855f7',
+    });
+    this.broadcastState();
+    return true;
   }
 
   public broadcastState(volatile = false): void {

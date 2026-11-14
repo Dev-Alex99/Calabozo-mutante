@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { socket } from './socket';
-import { GameWorldState, PlayerClass, CLASS_CONFIGS, EnemyEntity, ProjectileEntity, PlayerEntity } from './types';
+import { GameWorldState, PlayerClass, CLASS_CONFIGS, EnemyEntity, ProjectileEntity, PlayerEntity, WeaponEvolutionId } from './types';
 import { GameRenderer } from './engine/Renderer';
 import { LobbyView } from './components/LobbyView';
 import { DirectorBanner } from './components/DirectorBanner';
 import { PlayerHUD } from './components/PlayerHUD';
 import { RelicChoiceModal } from './components/RelicChoiceModal';
+import { WeaponEvolutionModal } from './components/WeaponEvolutionModal';
 import { EndGameModal } from './components/EndGameModal';
 import { TouchControls } from './components/TouchControls';
 import { AudioSettingsModal } from './components/AudioSettingsModal';
@@ -385,9 +386,28 @@ export const App: React.FC = () => {
             sfx.playPing();
             renderer.particleSystem.addShockwave(ev.x, ev.y, 65, '#f59e0b', 3);
           } else if (ev.type === 'DIRECTOR_INTERVENTION') {
-            sfx.playExplosion();
-            renderer.addScreenShake(10, 0.35);
-            renderer.particleSystem.addShockwave(ev.x, ev.y, ev.radius || 130, ev.color || '#ef4444', 5);
+            sfx.playDirectorBlackout();
+            renderer.addScreenShake(12, 0.4);
+            renderer.particleSystem.addShockwave(ev.x, ev.y, ev.radius || 180, ev.color || '#ef4444', 5);
+            if (ev.text) {
+              renderer.textManager.spawn(ev.text, ev.x, ev.y, ev.color || '#ef4444', true, true);
+            }
+          } else if (ev.type === 'ELEMENTAL_COMBO') {
+            const comboType = ev.text?.includes('NOXIOUS') ? 'NOXIOUS_COMBUSTION' : ev.text?.includes('SHATTER') ? 'SHATTER_SUPERCONDUCT' : 'FLASH_MELT';
+            sfx.playElementalCombo(comboType);
+            renderer.addHitStop(0.045);
+            renderer.addChromaticAberration(0.18);
+            renderer.addScreenShake(7, 0.22);
+            renderer.particleSystem.addShockwave(ev.x, ev.y, ev.radius || 110, ev.color || '#f97316', 4);
+            renderer.particleSystem.emitSparks(ev.x, ev.y, ev.color || '#f97316', 14);
+            renderer.textManager.spawn(ev.text || '¡REACCIÓN ELEMENTAL!', ev.x, ev.y, ev.color || '#f97316', true, true);
+          } else if (ev.type === 'TRAP_TRIGGER') {
+            sfx.playPendulumWhoosh();
+            renderer.particleSystem.emitSparks(ev.x, ev.y, ev.color || '#ef4444', 8);
+          } else if (ev.type === 'PUZZLE_SOLVED') {
+            sfx.playPuzzleSolved();
+            renderer.particleSystem.addShockwave(ev.x, ev.y, 160, '#22c55e', 5);
+            renderer.textManager.spawn('¡PUZZLE RESUELTO!', ev.x, ev.y, '#22c55e', true, true);
           } else if (ev.type === 'CRIT') {
             renderer.addChromaticAberration(0.08);
             renderer.particleSystem.emitSparks(ev.x, ev.y, ev.color || '#facc15', 10);
@@ -533,6 +553,8 @@ export const App: React.FC = () => {
             ...existing,
             ...(pTick as object),
             isDisconnected: !!(pTick as any).isDisconnected,
+            pendingEvolutionChoice: !!(pTick as any).pendingEvolutionChoice,
+            isRuneBearer: !!(pTick as any).isRuneBearer,
           };
         } else {
           // Robustness fallback: If player reconnected or state in-flight, keep entity alive
@@ -579,6 +601,43 @@ export const App: React.FC = () => {
             })
           : base.room.walls;
 
+      const updatedMacroRooms =
+        tick.mr && base.room.macroRooms
+          ? base.room.macroRooms.map(r => {
+              const found = tick.mr.find((tmr: any) => tmr.id === r.id);
+              return found
+                ? { ...r, isCleared: found.isCleared, isLocked: found.isLocked, isDiscovered: found.isDiscovered }
+                : r;
+            })
+          : base.room.macroRooms;
+
+      const updatedPuzzles =
+        tick.pz && base.room.puzzles
+          ? base.room.puzzles.map(pz => {
+              const found = tick.pz.find((tp: any) => tp.id === pz.id);
+              if (!found) return pz;
+              const plates = pz.plates
+                ? pz.plates.map(pl => {
+                    const foundPl = found.plates?.find((tpl: any) => tpl.id === pl.id);
+                    return foundPl ? { ...pl, isPressed: foundPl.isPressed } : pl;
+                  })
+                : pz.plates;
+              const torches = pz.torches
+                ? pz.torches.map(tc => {
+                    const foundTc = found.torches?.find((ttc: any) => ttc.id === tc.id);
+                    return foundTc
+                      ? {
+                          ...tc,
+                          isLit: foundTc.lit,
+                          litRemainingMs: foundTc.litUntil ? Math.max(0, foundTc.litUntil - Date.now()) : 0,
+                        }
+                      : tc;
+                  })
+                : pz.torches;
+              return { ...pz, isSolved: found.isSolved, plates, torches };
+            })
+          : base.room.puzzles;
+
       const merged: GameWorldState = {
         ...base,
         room: {
@@ -590,6 +649,11 @@ export const App: React.FC = () => {
           secretFound: tick.sf ?? base.room.secretFound,
           seals: updatedSeals,
           walls: updatedWalls,
+          macroRooms: updatedMacroRooms,
+          puzzles: updatedPuzzles,
+          pitchBlackActive: tick.pb !== undefined ? tick.pb : base.room.pitchBlackActive,
+          sacrificeAltarActive: tick.sa !== undefined ? tick.sa : base.room.sacrificeAltarActive,
+          runeBearerPlayerId: tick.rb !== undefined ? tick.rb : base.room.runeBearerPlayerId,
           hearts: tick.h !== undefined ? tick.h : base.room.hearts,
           barrels: tick.b !== undefined ? tick.b : base.room.barrels,
           hazards: tick.hz !== undefined ? tick.hz : base.room.hazards,
@@ -977,6 +1041,15 @@ export const App: React.FC = () => {
         e.preventDefault();
         triggerDash();
       } else if (k === 'e' || k === 'q') {
+        const w = worldRef.current;
+        const myP = w?.players[localPlayerIdRef.current];
+        if (k === 'e' && w?.room.sacrificeAltarActive && !w.room.sacrificeUsed && w.room.sacrificeAltarPos && myP) {
+          const dist = Math.hypot(myP.x - w.room.sacrificeAltarPos.x, myP.y - w.room.sacrificeAltarPos.y);
+          if (dist < 100) {
+            socket.emit('altar:sacrifice');
+            return;
+          }
+        }
         triggerSkill();
       } else if (k === 'g') {
         triggerPing();
@@ -1222,25 +1295,32 @@ export const App: React.FC = () => {
           // Clamp to room bounds
           const W = currentWorld.room.width || 2000;
           const H = currentWorld.room.height || 1450;
-          const pad = 48;
-          const isCleared = currentWorld.room.isCleared;
+          const pad = 36;
           const doors = currentWorld.room.doors;
 
-          if (sim.y < pad && !((isCleared || doors?.NORTH?.open) && Math.abs(sim.x - W / 2) < 82)) {
-            sim.y = pad;
-            sim.vy = 0;
-          }
-          if (sim.y > H - pad) {
-            sim.y = H - pad;
-            sim.vy = 0;
-          }
-          if (sim.x < pad && !((isCleared || doors?.WEST?.open) && Math.abs(sim.y - H / 2) < 82)) {
-            sim.x = pad;
-            sim.vx = 0;
-          }
-          if (sim.x > W - pad && !((isCleared || doors?.EAST?.open) && Math.abs(sim.y - H / 2) < 82)) {
-            sim.x = W - pad;
-            sim.vx = 0;
+          const inAnyDoor =
+            doors &&
+            Object.values(doors).some(
+              d => d.open && Math.hypot(sim.x - (d.x + d.width / 2), sim.y - (d.y + d.height / 2)) < 70
+            );
+
+          if (!inAnyDoor) {
+            if (sim.y < pad) {
+              sim.y = pad;
+              sim.vy = 0;
+            }
+            if (sim.y > H - pad) {
+              sim.y = H - pad;
+              sim.vy = 0;
+            }
+            if (sim.x < pad) {
+              sim.x = pad;
+              sim.vx = 0;
+            }
+            if (sim.x > W - pad) {
+              sim.x = W - pad;
+              sim.vx = 0;
+            }
           }
 
           // Procedural footsteps on stone floor
@@ -1390,6 +1470,10 @@ export const App: React.FC = () => {
     socket.emit('relic:pick', { code: world.code, relicId });
   };
 
+  const handleChooseEvolution = useCallback((evolutionId: WeaponEvolutionId) => {
+    socket.emit('player:choose_evolution', { evolutionId });
+  }, []);
+
   const handleAltarInteract = useCallback((action: 'UPGRADE_WEAPON' | 'BUY_HEAL' | 'BUY_SHIELD' | 'ACCEPT_PACT') => {
     const code = worldRef.current?.code;
     if (!code) return;
@@ -1476,6 +1560,14 @@ export const App: React.FC = () => {
         <RelicChoiceModal
           relics={world.room.chest.relicOptions}
           onSelect={handlePickRelic}
+        />
+      )}
+
+      {/* Weapon Evolution Modal (Pillar 5: Branching Lvl 3 Evolution) */}
+      {isPlaying && localPlayer?.pendingEvolutionChoice && !localPlayer.weaponEvolution && (
+        <WeaponEvolutionModal
+          classType={localPlayer.classType}
+          onSelect={handleChooseEvolution}
         />
       )}
 

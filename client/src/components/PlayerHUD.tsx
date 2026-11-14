@@ -1,5 +1,5 @@
 import React from 'react';
-import { PlayerEntity, CLASS_CONFIGS, AltarEntity } from '../types';
+import { PlayerEntity, CLASS_CONFIGS, AltarEntity, WEAPON_EVOLUTIONS } from '../types';
 import { Heart, Zap, Sparkles, Shield, Flame, Coins, Hammer, Scale, Volume2 } from 'lucide-react';
 import { sfx } from '../audio/sfx';
 
@@ -89,13 +89,24 @@ export const PlayerHUD: React.FC<Props> = React.memo(({
           <div className="absolute bottom-1 left-1 w-1 h-1 rounded-full bg-[#78716c]"></div>
           <div className="absolute bottom-1 right-1 w-1 h-1 rounded-full bg-[#78716c]"></div>
 
-          {/* Top: Name, Weapon Level, Ping & Gold */}
+          {/* Top: Name, Weapon Level / Evolution, Ping & Gold */}
           <div className="flex items-center justify-between text-xs font-cinzel">
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <span className="font-bold text-[#e7e5e4]">{player.name}</span>
-              <span className="text-[#d97706] text-[10px] bg-[#1c1917] px-1.5 py-0.5 rounded border border-[#44403c]">
-                ⚒️ Nv.{player.weaponLevel}
-              </span>
+              {player.weaponEvolution ? (
+                <span className="text-amber-300 text-[10px] bg-amber-950/80 px-1.5 py-0.5 rounded border border-amber-600 font-bold flex items-center gap-1 shadow">
+                  ✨ {WEAPON_EVOLUTIONS[player.weaponEvolution]?.name || 'Arma Mítica'}
+                </span>
+              ) : (
+                <span className="text-[#d97706] text-[10px] bg-[#1c1917] px-1.5 py-0.5 rounded border border-[#44403c]">
+                  ⚒️ Nv.{player.weaponLevel}
+                </span>
+              )}
+              {player.isRuneBearer && (
+                <span className="text-rose-300 text-[9px] bg-rose-950/90 px-1.5 py-0.5 rounded border border-rose-600 font-bold animate-pulse flex items-center gap-1">
+                  👁️ PRESA
+                </span>
+              )}
               {typeof ping === 'number' && (
                 <span
                   className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold flex items-center gap-1 ${

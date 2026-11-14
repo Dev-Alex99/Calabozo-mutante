@@ -263,6 +263,22 @@ io.on('connection', (socket: Socket) => {
     room.handleAltarInteract(socket.id, action);
   });
 
+  // Weapon Evolution Selection (Level 3+)
+  socket.on('player:choose_evolution', ({ code, evolutionId }) => {
+    const room = roomManager.getRoom(code);
+    if (!room) return;
+
+    room.handleChooseWeaponEvolution(socket.id, evolutionId);
+  });
+
+  // Blood Sacrifice Altar Interaction (AI Director Live Event)
+  socket.on('altar:sacrifice', ({ code }) => {
+    const room = roomManager.getRoom(code);
+    if (!room) return;
+
+    room.handleSacrificeInteract(socket.id);
+  });
+
   // Restart Game
   socket.on('game:restart', ({ code }) => {
     const room = roomManager.getRoom(code);

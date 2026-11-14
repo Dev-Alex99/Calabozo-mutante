@@ -77,10 +77,15 @@ export interface PlayerEntity {
   combo: number;
   maxCombo: number;
   comboExpiresAt: number;
-  reviveProgress: number;
+  reviveProgress: number; // 0 to 1 when an ally is reviving this fallen player
   revivesCount: number;
   synergiesTriggered: number;
   title?: string;
+  weaponEvolution?: WeaponEvolutionId;
+  pendingEvolutionChoice?: boolean;
+  currentMacroRoomId?: string;
+  isRuneBearer?: boolean;
+  runeBearerUntil?: number;
   lastProcessedSeq?: number;
   ping?: number;
   isDisconnected?: boolean;
@@ -148,10 +153,14 @@ export interface EnemyEntity {
   isElite?: boolean;
   eliteModifier?: EliteModifier;
   flashUntil?: number;
+  // Elemental & Crowd Control Status Effects
   burnUntil?: number;
   poisonUntil?: number;
   chillUntil?: number;
   stunUntil?: number;
+  macroRoomId?: string;
+  isDormant?: boolean;
+  elementalCombos?: ElementalReactionType[];
 }
 
 export interface ProjectileEntity {
@@ -246,7 +255,11 @@ export interface WorldEventFX {
     | 'PING'
     | 'DIRECTOR_INTERVENTION'
     | 'SHOCKWAVE'
-    | 'LIGHTNING_ARC';
+    | 'LIGHTNING_ARC'
+    | 'ELEMENTAL_COMBO'
+    | 'TRAP_TRIGGER'
+    | 'PUZZLE_SOLVED'
+    | 'EVOLUTION';
   x: number;
   y: number;
   targetX?: number;
@@ -254,6 +267,7 @@ export interface WorldEventFX {
   radius?: number;
   text?: string;
   color?: string;
+  comboType?: ElementalReactionType;
   timestamp: number;
 }
 
@@ -324,6 +338,167 @@ export interface SyncSeal {
   label?: string;
 }
 
+export type MacroRoomType = 'SPAWN' | 'COMBAT' | 'PUZZLE' | 'SANCTUARY' | 'BOSS';
+
+export interface MacroRoom {
+  id: string;
+  roomIndex: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  type: MacroRoomType;
+  title: string;
+  isCleared: boolean;
+  isLocked: boolean;
+  isDiscovered: boolean;
+  enemyIds?: string[];
+}
+
+export type TrapType = 'PENDULUM' | 'FIRE_GRATE' | 'DART_LAUNCHER';
+
+export interface ActiveTrap {
+  id: string;
+  type: TrapType;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  periodMs: number;
+  offsetMs: number;
+  damage: number;
+  maxAngleRad?: number;
+  armLength?: number;
+  facing?: 'NORTH' | 'SOUTH' | 'EAST' | 'WEST';
+  shootIntervalMs?: number;
+}
+
+export type PuzzleType = 'RUNIC_SEQUENCE' | 'SIMULTANEOUS_PLATES' | 'TORCH_GAUNTLET';
+
+export interface PuzzlePlate {
+  id: string;
+  x: number;
+  y: number;
+  radius: number;
+  color: string;
+  symbol: string;
+  isPressed: boolean;
+  pressedBy?: string;
+  activationOrder?: number;
+}
+
+export interface TimedTorch {
+  id: string;
+  x: number;
+  y: number;
+  lit: boolean;
+  litUntil: number;
+}
+
+export interface CoopPuzzle {
+  id: string;
+  roomId: string;
+  type: PuzzleType;
+  isSolved: boolean;
+  solvedAt?: number;
+  rewardClaimed: boolean;
+  plates: PuzzlePlate[];
+  torches: TimedTorch[];
+  sequence?: string[];
+  currentSequenceIdx?: number;
+  timeLimitMs?: number;
+  hintText?: string;
+  resetCooldownUntil?: number;
+}
+
+export type ElementalReactionType = 'NOXIOUS_COMBUSTION' | 'SHATTER_SUPERCONDUCT' | 'FLASH_MELT';
+
+export type WeaponEvolutionId =
+  | 'GUERRERO_METEORO'
+  | 'GUERRERO_ESPINAS'
+  | 'CAZADOR_GATLING'
+  | 'CAZADOR_RELAMPAGO'
+  | 'MAGO_TORMENTA'
+  | 'MAGO_FENIX'
+  | 'PICARO_SOMBRAS'
+  | 'PICARO_TRAMPERO';
+
+export interface WeaponEvolutionInfo {
+  id: WeaponEvolutionId;
+  name: string;
+  description: string;
+  icon: string;
+  classType: PlayerClass;
+  perks: string[];
+}
+
+export const WEAPON_EVOLUTIONS: Record<WeaponEvolutionId, WeaponEvolutionInfo> = {
+  GUERRERO_METEORO: {
+    id: 'GUERRERO_METEORO',
+    name: 'Mandoble Meteoro',
+    description: 'Los tajos desatan olas de fuego sísmicas y el Baluarte genera un cráter volcánico abrasador.',
+    icon: '🔥',
+    classType: 'GUERRERO',
+    perks: ['Olas sísmicas ígneas en cada impacto', 'Cráter de magma en Baluarte Sísmico', '+40% Daño de Área'],
+  },
+  GUERRERO_ESPINAS: {
+    id: 'GUERRERO_ESPINAS',
+    name: 'Sed de Espinas',
+    description: 'Robo de vida vampírico del 18% y contragolpes de púas sangrientas al recibir cualquier impacto.',
+    icon: '🩸',
+    classType: 'GUERRERO',
+    perks: ['+18% Robo de Vida (Lifesteal)', 'Reflejo de espinas sangrientas al ser dañado', '+50 Vida Máxima'],
+  },
+  CAZADOR_GATLING: {
+    id: 'CAZADOR_GATLING',
+    name: 'Ballesta Gatling',
+    description: 'Cadencia de fuego ametralladora hiperveloz disparando ráfagas continuas de virotes de tungsteno.',
+    icon: '🏹',
+    classType: 'CAZADOR',
+    perks: ['+80% Velocidad de Ataque', 'Virotes perforan a todos los objetivos', '+15% Probabilidad Crítica'],
+  },
+  CAZADOR_RELAMPAGO: {
+    id: 'CAZADOR_RELAMPAGO',
+    name: 'Lanzador Relámpago',
+    description: 'Cada virote impactado bifurca relámpagos en cadena electrocutando a múltiples enemigos cercanos.',
+    icon: '⚡',
+    classType: 'CAZADOR',
+    perks: ['Relámpagos en cadena al impactar', 'Sobrecarga voltaica acumulable', '+30% Daño Elemental'],
+  },
+  MAGO_TORMENTA: {
+    id: 'MAGO_TORMENTA',
+    name: 'Tormenta en Cadena',
+    description: 'Proyectiles arcanos que desatan tempestades de plasma eléctrico saltando entre hasta 5 objetivos.',
+    icon: '🌩️',
+    classType: 'MAGO',
+    perks: ['Bifurcación eléctrica continua', 'Aturdimiento por descarga (1s)', '+35% Radio de Hechizos'],
+  },
+  MAGO_FENIX: {
+    id: 'MAGO_FENIX',
+    name: 'Fénix Ígneo',
+    description: 'Invoca aves fénix ardientes inteligentes que persiguen a los enemigos y detonan en anillos de fuego.',
+    icon: '🦅',
+    classType: 'MAGO',
+    perks: ['Proyectiles inteligentes teledirigidos', 'Detonación térmica expansiva', 'Ignición residual'],
+  },
+  PICARO_SOMBRAS: {
+    id: 'PICARO_SOMBRAS',
+    name: 'Dagas Gemelas de las Sombras',
+    description: 'Invoca clones de sombras que atacan por la espalda con un 100% de probabilidad de golpe crítico.',
+    icon: '🗡️',
+    classType: 'PICARO',
+    perks: ['Apuñalamiento espectral por la espalda', '+50% Daño Crítico', 'Invulnerabilidad extendida en Dash'],
+  },
+  PICARO_TRAMPERO: {
+    id: 'PICARO_TRAMPERO',
+    name: 'Maestro Trampero Neurotóxico',
+    description: 'El Dash libera una estela de abrojos neurotóxicos y humo cegador que incapacita al enemigo.',
+    icon: '🧪',
+    classType: 'PICARO',
+    perks: ['Estela de abrojos venenosos al dashear', 'Nube de humo cegadora', '+45% Daño a enemigos afectados'],
+  },
+};
+
 export interface RoomState {
   roomIndex: number;
   totalRooms: number;
@@ -340,6 +515,15 @@ export interface RoomState {
   hazards: HazardZone[];
   walls: WallSegment[];
   seals: SyncSeal[];
+  macroRooms?: MacroRoom[];
+  activeTraps?: ActiveTrap[];
+  puzzles?: CoopPuzzle[];
+  pitchBlackActive?: boolean;
+  pitchBlackUntil?: number;
+  sacrificeAltarActive?: boolean;
+  sacrificeAltarPos?: { x: number; y: number };
+  sacrificeUsed?: boolean;
+  runeBearerPlayerId?: string;
   currentWave: number;
   totalWaves: number;
   secretFound?: boolean;
@@ -358,7 +542,7 @@ export interface GameWorldState {
   projectiles: ProjectileEntity[];
   recentEvents: WorldEventFX[];
   directorDialogue: DirectorDialogue;
-  directorAnger: number;
+  directorAnger: number; // 0 to 100 — fills up as players dominate, triggering live AI interventions!
   telemetry: {
     totalDamageDealt: number;
     rangedAttacksCount: number;

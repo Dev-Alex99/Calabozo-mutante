@@ -343,12 +343,28 @@ export class GameRenderer {
       ctx.restore();
     }
 
+    // 4.4. Active Environmental Traps (Pendulums, Fire Grates, Wall Darts)
+    if (world.room.activeTraps) {
+      for (const trap of world.room.activeTraps) {
+        if (inView(trap.x, trap.y, 240)) {
+          SpriteModels.drawActiveTrap(ctx, trap, this.totalTime);
+        }
+      }
+    }
+
     // 4.5. Environmental & Skill Hazards with Frustum Culling
     if (world.room.hazards) {
       for (const h of world.room.hazards) {
         if (inView(h.x, h.y, h.radius || 90)) {
           SpriteModels.drawHazard(ctx, h, this.totalTime);
         }
+      }
+    }
+
+    // 4.6. Cooperative Puzzles (Runic Sequence Plates & Timed Torches)
+    if (world.room.puzzles) {
+      for (const puz of world.room.puzzles) {
+        SpriteModels.drawCoopPuzzle(ctx, puz, this.totalTime);
       }
     }
 
@@ -389,6 +405,20 @@ export class GameRenderer {
       ctx.ellipse(world.room.altar.x, world.room.altar.y + 16, 26, 11, 0, 0, Math.PI * 2);
       ctx.fill();
       SpriteModels.drawAltar(ctx, world.room.altar, this.totalTime);
+    }
+
+    // 5.3. Blood Sacrifice Altar (AI Dungeon Director Live Dilemma)
+    if (world.room.sacrificeAltarActive && world.room.sacrificeAltarPos) {
+      const sp = world.room.sacrificeAltarPos;
+      if (inView(sp.x, sp.y, 80)) {
+        SpriteModels.drawSacrificeAltar(
+          ctx,
+          sp.x,
+          sp.y,
+          this.totalTime,
+          !!world.room.sacrificeUsed
+        );
+      }
     }
 
     // 5.5. Draw Pickups (Hearts, Gold Coins, Shield Orbs, Frenzy Orbs)
@@ -514,7 +544,15 @@ export class GameRenderer {
         }
       }
 
+      if (player.weaponEvolution) {
+        SpriteModels.drawWeaponEvolutionAura(ctx, smoothPlayer, this.totalTime);
+      }
+
       SpriteModels.drawPlayer(ctx, smoothPlayer, player.id === localPlayerId, this.totalTime);
+
+      if (world.room.runeBearerPlayerId === player.id) {
+        SpriteModels.drawRuneBearerMarker(ctx, sp.x, sp.y, this.totalTime);
+      }
 
       if (player.isDisconnected) {
         ctx.save();
@@ -879,7 +917,24 @@ export class GameRenderer {
     }
     ctx.globalAlpha = 1.0;
 
-    if (world.room.mutation.lowVisibility && localPlayer) {
+    if (world.room.pitchBlackActive && localPlayer) {
+      // AI Dungeon Director: Pitch Black Out Live Event
+      const visRadius = 165;
+      const grad = ctx.createRadialGradient(
+        localPlayer.x,
+        localPlayer.y,
+        visRadius * 0.25,
+        localPlayer.x,
+        localPlayer.y,
+        visRadius
+      );
+      grad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+      grad.addColorStop(0.65, 'rgba(3, 2, 2, 0.88)');
+      grad.addColorStop(1, 'rgba(2, 2, 2, 0.98)');
+
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+    } else if (world.room.mutation.lowVisibility && localPlayer) {
       const visRadius = world.room.mutation.visibilityRadius || 410;
 
       const grad = ctx.createRadialGradient(
@@ -1065,8 +1120,9 @@ export class GameRenderer {
     ctx.save();
     if (world.room.isCleared) {
       // Point clearly toward the Open North Portal!
-      const doorX = roomW / 2;
-      const doorY = 30;
+      const northDoor = world.room.doors?.NORTH;
+      const doorX = northDoor ? northDoor.x + northDoor.width / 2 : roomW / 2;
+      const doorY = northDoor ? northDoor.y + northDoor.height / 2 : 30;
       const dist = Math.hypot(doorX - px, doorY - py);
       if (dist > 110) {
         const angle = Math.atan2(doorY - py, doorX - px);
@@ -1200,6 +1256,73 @@ export class GameRenderer {
       ctx.fill();
     }
 
+    // Multi-Room Macro Dungeon Layout
+    if (world.room.macroRooms && world.room.macroRooms.length > 0) {
+      for (const mr of world.room.macroRooms) {
+        const rx = mapX + mr.x * scaleX;
+        const ry = mapY + mr.y * scaleY;
+        const rw = mr.width * scaleX;
+        const rh = mr.height * scaleY;
+
+        if (!mr.isDiscovered) {
+          // Undiscovered room: fog of war shroud
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.55)';
+          ctx.strokeStyle = '#334155';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 3]);
+          ctx.fillRect(rx, ry, rw, rh);
+          ctx.strokeRect(rx, ry, rw, rh);
+          ctx.setLineDash([]);
+
+          ctx.fillStyle = '#64748b';
+          ctx.font = 'bold 9px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('?', rx + rw / 2, ry + rh / 2);
+        } else {
+          // Discovered room
+          ctx.fillStyle =
+            mr.type === 'SPAWN'
+              ? 'rgba(30, 41, 59, 0.7)'
+              : mr.type === 'PUZZLE'
+              ? (mr.isCleared ? 'rgba(6, 78, 59, 0.7)' : 'rgba(30, 58, 138, 0.7)')
+              : mr.type === 'SANCTUARY'
+              ? 'rgba(120, 53, 15, 0.7)'
+              : (mr.isCleared ? 'rgba(20, 83, 45, 0.7)' : 'rgba(127, 29, 29, 0.7)');
+
+          ctx.strokeStyle = mr.isCleared
+            ? '#22c55e'
+            : mr.type === 'PUZZLE'
+            ? '#38bdf8'
+            : mr.type === 'SANCTUARY'
+            ? '#f59e0b'
+            : '#ef4444';
+          ctx.lineWidth = 1.5;
+          ctx.fillRect(rx, ry, rw, rh);
+          ctx.strokeRect(rx, ry, rw, rh);
+
+          // Room Type Glyph
+          const glyph =
+            mr.type === 'SPAWN'
+              ? '⌂'
+              : mr.type === 'PUZZLE'
+              ? '✦'
+              : mr.type === 'SANCTUARY'
+              ? '⛩'
+              : mr.type === 'COMBAT'
+              ? '⚔'
+              : '';
+          if (glyph) {
+            ctx.fillStyle = ctx.strokeStyle;
+            ctx.font = 'bold 10px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(glyph, rx + rw / 2, ry + rh / 2);
+          }
+        }
+      }
+    }
+
     // Interior Labyrinth Walls & Secret Wall
     if (world.room.walls) {
       for (const w of world.room.walls) {
@@ -1226,17 +1349,19 @@ export class GameRenderer {
 
     // Doors (North, East, West)
     const doors = world.room.doors;
-    if (doors?.NORTH) {
-      ctx.fillStyle = doors.NORTH.open ? '#22c55e' : '#dc2626';
-      ctx.fillRect(mapX + mapW / 2 - 8, mapY, 16, 4);
-    }
-    if (doors?.EAST && doors.EAST.open) {
-      ctx.fillStyle = '#f59e0b';
-      ctx.fillRect(mapX + mapW - 4, mapY + mapH / 2 - 6, 4, 12);
-    }
-    if (doors?.WEST && doors.WEST.open) {
-      ctx.fillStyle = '#38bdf8';
-      ctx.fillRect(mapX, mapY + mapH / 2 - 6, 4, 12);
+    if (doors) {
+      for (const d of Object.values(doors)) {
+        if (!d.open && d.direction !== 'NORTH') continue;
+        ctx.fillStyle = d.open
+          ? (d.direction === 'EAST' ? '#f59e0b' : d.direction === 'WEST' ? '#38bdf8' : '#22c55e')
+          : '#dc2626';
+        ctx.fillRect(
+          mapX + d.x * scaleX,
+          mapY + d.y * scaleY,
+          Math.max(4, d.width * scaleX),
+          Math.max(4, d.height * scaleY)
+        );
+      }
     }
 
     // Enemies (Red dots, Gold for Boss)
