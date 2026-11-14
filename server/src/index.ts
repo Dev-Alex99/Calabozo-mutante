@@ -22,7 +22,7 @@ const io = new Server(httpServer, {
     methods: ['GET', 'POST'],
   },
   pingInterval: 10000,
-  pingTimeout: 5000,
+  pingTimeout: 25000,
   perMessageDeflate: false,
   httpCompression: false,
 });

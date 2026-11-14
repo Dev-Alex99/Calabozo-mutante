@@ -237,10 +237,10 @@ export class DungeonRoom {
 
     p.isDisconnected = true;
     p.disconnectedAt = Date.now();
-    p.invulnerableUntil = Math.max(p.invulnerableUntil, Date.now() + 25000);
+    p.invulnerableUntil = Math.max(p.invulnerableUntil, Date.now() + 35000);
     this.directorDialogue = {
       speaker: 'Director del Calabozo',
-      text: `¡${p.name} perdió la sintonía astral! Tiene 25s para reconectar.`,
+      text: `¡${p.name} perdió la sintonía astral! Tiene 35s para reconectar.`,
       mood: 'MOCKING',
       timestamp: Date.now(),
     };
@@ -424,12 +424,16 @@ export class DungeonRoom {
       const W = this.roomWidth;
       const H = this.roomHeight;
 
-      // Immediately move players away from doors before any async work!
+      // Immediately move players away from doors before any async work and revive fallen allies!
       Object.values(this.players).forEach((p, idx) => {
         p.x = W / 2 + (idx * 44 - 66);
         p.y = H - 130;
         p.vx = 0;
         p.vy = 0;
+        p.isAlive = true;
+        p.isDashing = false;
+        p.reviveProgress = 0;
+        p.invulnerableUntil = Date.now() + 2500;
       });
 
       const roomData = await this.director.getRoomData(index, this.totalRooms);
@@ -531,8 +535,9 @@ export class DungeonRoom {
         p.vx = 0;
         p.vy = 0;
         p.isAlive = true;
+        p.isDashing = false;
         p.reviveProgress = 0;
-        p.invulnerableUntil = Date.now() + 1400;
+        p.invulnerableUntil = Date.now() + 2000;
         p.currentHp = Math.min(p.maxHp, p.currentHp + Math.floor(p.maxHp * healRatio));
         if (this.encounterType === 'SANCTUARY') {
           p.shieldHp = Math.max(p.shieldHp, 30);
@@ -1000,6 +1005,8 @@ export class DungeonRoom {
   ): void {
     const player = this.players[socketId];
     if (!player || !player.isAlive || this.phase !== 'PLAYING') return;
+
+    if (this.isTransitioningRoom) return;
 
     if (typeof input.seq === 'number') {
       player.lastProcessedSeq = Math.max(player.lastProcessedSeq || 0, input.seq);
@@ -1532,9 +1539,9 @@ export class DungeonRoom {
       this.hazardsDirty = true;
     }
 
-    // Disconnected player timeout check (25s grace period)
+    // Disconnected player timeout check (35s grace period)
     for (const [id, p] of Object.entries(this.players)) {
-      if (p.isDisconnected && p.disconnectedAt && now - p.disconnectedAt > 25000) {
+      if (p.isDisconnected && p.disconnectedAt && now - p.disconnectedAt > 35000) {
         this.removePlayer(id);
       }
     }
@@ -3666,6 +3673,13 @@ export class DungeonRoom {
 
   public advanceToNextRoom(nextEncounterType: RoomEncounterType = 'STANDARD'): void {
     if (!this.isRoomCleared() || this.isTransitioningRoom) return;
+    this.isTransitioningRoom = true;
+    for (const p of Object.values(this.players)) {
+      p.vx = 0;
+      p.vy = 0;
+      p.isDashing = false;
+      p.invulnerableUntil = Date.now() + 3000;
+    }
     const nextIdx = this.roomIndex + 1;
     void this.setupRoom(nextIdx, nextEncounterType);
   }

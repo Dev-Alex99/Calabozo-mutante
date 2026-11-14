@@ -21,6 +21,7 @@ interface PendingInput {
   len: number;
   angle: number;
   isDashing: boolean;
+  dashEndsAt?: number;
   timestamp: number;
 }
 
@@ -171,15 +172,20 @@ export const App: React.FC = () => {
         const roomChanged = updated.room.roomIndex !== sim.roomIndex;
         const dist = Math.hypot(player.x - sim.x, player.y - sim.y);
 
-        if (roomChanged || !player.isAlive || dist > 450) {
+        if (roomChanged || !player.isAlive || dist > 280) {
           // Hard snap on room transition, death/revive, or massive desync
           sim.roomIndex = updated.room.roomIndex;
           sim.x = player.x;
           sim.y = player.y;
-          sim.vx = player.vx;
-          sim.vy = player.vy;
-          sim.isDashing = player.isDashing;
+          sim.vx = 0;
+          sim.vy = 0;
+          sim.isDashing = false;
           inputHistoryRef.current = [];
+          if (roomChanged) {
+            renderer.clearSmoothPositions();
+            renderer.cameraX = player.x - window.innerWidth / 2;
+            renderer.cameraY = player.y - window.innerHeight / 2;
+          }
         } else {
           // Reconcile using Input Sequence Replay Buffer (Zero rubberbanding at 40-400ms!)
           const ackSeq = (player as any).seq || (player as any).lastProcessedSeq || 0;
@@ -204,7 +210,8 @@ export const App: React.FC = () => {
             const isIce = updated.room.mutation.frictionMultiplier < 0.3;
 
             for (const inp of inputHistoryRef.current) {
-              if (inp.isDashing) {
+              const inpStillDashing = inp.isDashing && (!inp.dashEndsAt || inp.timestamp <= inp.dashEndsAt);
+              if (inpStillDashing) {
                 const dirX = inp.len > 0.1 ? inp.moveX / inp.len : Math.cos(inp.angle);
                 const dirY = inp.len > 0.1 ? inp.moveY / inp.len : Math.sin(inp.angle);
                 rvx = dirX * baseStats.dashSpeed;
@@ -266,28 +273,18 @@ export const App: React.FC = () => {
               }
             }
 
-            // Smooth gentle error correction
-            // Never snap backwards while actively dashing locally or during post-dash decay
+            // Smooth gentle error correction - Never snap backwards while actively dashing locally or post-dash
             const isLocalDashing = sim.isDashing || now < sim.dashEndsAt;
             const errDist = Math.hypot(rx - sim.x, ry - sim.y);
-            if (!isLocalDashing) {
-              if (errDist > 80) {
-                sim.x = rx;
-                sim.y = ry;
-                sim.vx = rvx;
-                sim.vy = rvy;
-              } else if (errDist > 4) {
-                sim.x += (rx - sim.x) * 0.18;
-                sim.y += (ry - sim.y) * 0.18;
-                sim.vx = rvx;
-                sim.vy = rvy;
-              }
-            } else {
-              // During active dash: do NOT hard snap. Only micro-adjust if difference is small and aligned.
-              if (errDist > 6 && errDist < 50) {
-                sim.x += (rx - sim.x) * 0.08;
-                sim.y += (ry - sim.y) * 0.08;
-              }
+            if (errDist > 280) {
+              // Irrecoverable desync hard snap
+              sim.x = rx;
+              sim.y = ry;
+            } else if (errDist > 8) {
+              // Smooth exponential lerp adjustment without velocity jerking
+              const blendRate = isLocalDashing ? 0.05 : 0.15;
+              sim.x += (rx - sim.x) * blendRate;
+              sim.y += (ry - sim.y) * blendRate;
             }
           }
 
@@ -537,6 +534,22 @@ export const App: React.FC = () => {
             ...(pTick as object),
             isDisconnected: !!(pTick as any).isDisconnected,
           };
+        } else {
+          // Robustness fallback: If player reconnected or state in-flight, keep entity alive
+          mergedPlayers[id] = {
+            id,
+            name: 'Aventurero',
+            classType: 'CAZADOR',
+            avatarIndex: 0,
+            isHost: false,
+            isBot: false,
+            relics: [],
+            weaponLevel: 1,
+            kills: 0,
+            damageDealt: 0,
+            revivesCount: 0,
+            ...(pTick as object),
+          };
         }
       }
 
@@ -599,12 +612,28 @@ export const App: React.FC = () => {
       if (savedCode && savedPlayerId) {
         socket.emit('room:reconnect', { code: savedCode, playerId: savedPlayerId }, (res: any) => {
           if (res?.success) {
+            localPlayerIdRef.current = res.playerId;
             setLocalPlayerId(res.playerId);
             sessionStorage.setItem('calabozo_player_id', res.playerId);
             sessionStorage.setItem('calabozo_room_code', res.code);
             worldRef.current = res.state;
             setWorld(res.state);
             setErrorMessage(null);
+
+            const p = res.state?.players?.[res.playerId];
+            if (p) {
+              const sim = localSimRef.current;
+              sim.roomIndex = res.state.room.roomIndex;
+              sim.x = p.x;
+              sim.y = p.y;
+              sim.vx = 0;
+              sim.vy = 0;
+              sim.isDashing = false;
+              inputHistoryRef.current = [];
+              rendererRef.current.clearSmoothPositions();
+              rendererRef.current.cameraX = p.x - window.innerWidth / 2;
+              rendererRef.current.cameraY = p.y - window.innerHeight / 2;
+            }
           } else {
             sessionStorage.removeItem('calabozo_room_code');
             sessionStorage.removeItem('calabozo_player_id');
@@ -718,6 +747,8 @@ export const App: React.FC = () => {
     const dt = lastInputTimeRef.current > 0 ? Math.max(0.01, Math.min(0.08, (now - lastInputTimeRef.current) / 1000)) : 0.05;
     lastInputTimeRef.current = now;
 
+    const isDashing = overrideDash || sim.isDashing || now < sim.dashEndsAt;
+
     // Store in history buffer for replay reconciliation
     inputHistoryRef.current.push({
       seq,
@@ -726,7 +757,8 @@ export const App: React.FC = () => {
       moveY,
       len,
       angle: sim.angle,
-      isDashing: overrideDash || sim.isDashing || now < sim.dashEndsAt,
+      isDashing,
+      dashEndsAt: sim.dashEndsAt,
       timestamp: now,
     });
     if (inputHistoryRef.current.length > 120) {
@@ -1031,27 +1063,34 @@ export const App: React.FC = () => {
       pollGamepad();
 
       if (canvas && currentWorld) {
-        const player = currentWorld.players[currentPlayerId];
-        if (player && player.isAlive && currentWorld.phase === 'PLAYING') {
+        const player = currentWorld.players[currentPlayerId] || (localPlayerIdRef.current ? currentWorld.players[localPlayerIdRef.current] : undefined);
+        if (player && currentWorld.phase === 'PLAYING') {
           const now = Date.now();
           const sim = localSimRef.current;
           const renderer = rendererRef.current;
 
-          // Process input buffer (Dash / Skill queued within 130ms)
-          if (bufferedActionRef.current && now >= bufferedActionRef.current.readyAt) {
-            const act = bufferedActionRef.current.type;
-            bufferedActionRef.current = null;
-            if (act === 'DASH') triggerDash();
-            else if (act === 'SKILL') triggerSkill();
-          }
-
+          // Room change check MUST run whenever player exists, alive or fallen!
           if (sim.roomIndex !== currentWorld.room.roomIndex) {
             sim.roomIndex = currentWorld.room.roomIndex;
             sim.x = player.x;
             sim.y = player.y;
-            sim.vx = player.vx;
-            sim.vy = player.vy;
+            sim.vx = 0;
+            sim.vy = 0;
+            sim.isDashing = false;
+            inputHistoryRef.current = [];
+            renderer.clearSmoothPositions();
+            renderer.cameraX = player.x - canvas.width / 2;
+            renderer.cameraY = player.y - canvas.height / 2;
           }
+
+          if (player.isAlive) {
+            // Process input buffer (Dash / Skill queued within 130ms)
+            if (bufferedActionRef.current && now >= bufferedActionRef.current.readyAt) {
+              const act = bufferedActionRef.current.type;
+              bufferedActionRef.current = null;
+              if (act === 'DASH') triggerDash();
+              else if (act === 'SKILL') triggerSkill();
+            }
 
           // Auto-aim logic for touch / gamepad or fallback
           const isTouchActive = touchAttack.current || touchMove.current.x !== 0 || touchMove.current.y !== 0;
@@ -1257,6 +1296,7 @@ export const App: React.FC = () => {
           player.angle = sim.angle;
           player.isDashing = sim.isDashing;
         }
+      }
 
         const ctx = canvas.getContext('2d');
         if (ctx) {
@@ -1282,6 +1322,7 @@ export const App: React.FC = () => {
     socket.emit('room:create', { playerName, classType, avatarIndex }, (res: any) => {
       setIsLoading(false);
       if (res.success) {
+        localPlayerIdRef.current = res.playerId;
         setLocalPlayerId(res.playerId);
         sessionStorage.setItem('calabozo_player_id', res.playerId);
         sessionStorage.setItem('calabozo_room_code', res.code);
@@ -1300,6 +1341,7 @@ export const App: React.FC = () => {
     socket.emit('room:join', { code, playerName, classType, avatarIndex }, (res: any) => {
       setIsLoading(false);
       if (res.success) {
+        localPlayerIdRef.current = res.playerId;
         setLocalPlayerId(res.playerId);
         sessionStorage.setItem('calabozo_player_id', res.playerId);
         sessionStorage.setItem('calabozo_room_code', res.code);

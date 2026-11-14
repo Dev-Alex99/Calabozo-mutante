@@ -119,6 +119,10 @@ export class GameRenderer {
     ctx.restore();
   }
 
+  public clearSmoothPositions() {
+    this.interpPositions.clear();
+  }
+
   private getSmoothPos(
     id: string,
     targetX: number,
@@ -215,8 +219,12 @@ export class GameRenderer {
       this.cameraX += (targetCamX - this.cameraX) * camBlend;
       this.cameraY += (targetCamY - this.cameraY) * camBlend;
     } else {
-      this.cameraX = roomW / 2 - canvasWidth / 2;
-      this.cameraY = roomH / 2 - canvasHeight / 2;
+      // Gentle blend toward room center on transition/reconnect fallback without jarring snap
+      const targetCamX = roomW / 2 - canvasWidth / 2;
+      const targetCamY = roomH / 2 - canvasHeight / 2;
+      const camBlend = Math.min(1, dt * 6);
+      this.cameraX += (targetCamX - this.cameraX) * camBlend;
+      this.cameraY += (targetCamY - this.cameraY) * camBlend;
     }
 
     // Update screen shake
